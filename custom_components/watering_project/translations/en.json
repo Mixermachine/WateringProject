@@ -64,5 +64,15 @@
         "name": "Plants needing water"
       }
     }
+  },
+  "issues": {
+    "notify_service_missing": {
+      "title": "Notifications could not be sent",
+      "description": "The notify service `{service}` is not available or failed: {detail}. Check the service name in the integration options, or disable notifications."
+    },
+    "battery_suspect": {
+      "title": "Battery readings are untrustworthy",
+      "description": "These sensors report 0% battery for longer than the configured duration, so their plant status cannot be trusted and they are excluded from watering notifications: {plants}."
+    }
   }
 }

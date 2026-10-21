@@ -56,6 +56,8 @@ from .const import (
     STATUS_NO_DATA,
 )
 from .discovery import ExcludedRecord, discover
+from .notifications import NotificationManager
+from .payload import build_payload
 from .store import WateringStore
 from .verdicts import VerdictHistory
 
@@ -69,12 +71,14 @@ def _verdict_key(verdict: Verdict) -> tuple[Any, ...]:
 
     ``previous_status`` and ``battery_never_reported`` are diagnostics. Counting
     them would make every evaluation look like a status flip (``previous_status``
-    fills in after the first run) and push the payload on every tick.
+    fills in after the first run) and push the payload on every tick. ``moisture``
+    is excluded on purpose: it changes on every Zigbee report, the card reads the
+    live value from ``hass.states``, and including it would turn each report into
+    a websocket push.
     """
     return (
         verdict.status,
         verdict.needs_water,
-        verdict.moisture,
         verdict.zero_days,
         verdict.battery_value,
         verdict.threshold,
@@ -139,6 +143,8 @@ class WateringCoordinator:
         self._debouncer: Debouncer[None] | None = None
         self._started = False
         self.evaluation_count = 0
+        self.notifications = NotificationManager(hass, entry, store)
+        self._payload_listeners: list[Callable[[], None]] = []
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -322,6 +328,11 @@ class WateringCoordinator:
         if self.history.update(verdicts):
             self.store.async_schedule_save()
 
+        try:
+            await self.notifications.async_process(self.verdicts, self.plants, now)
+        except Exception:
+            _LOGGER.exception("Notification processing failed")
+
         self._sync_state_listeners()
         self._update_payload_version(trigger)
         self._notify_listeners()
@@ -388,16 +399,21 @@ class WateringCoordinator:
 
     def _update_payload_version(self, trigger: str) -> None:
         signature = self._payload_signature_of()
-        if signature != self._payload_signature:
-            self._payload_signature = signature
-            self.payload_version += 1
+        if signature == self._payload_signature:
+            return
+        self._payload_signature = signature
+        self.payload_version += 1
+        for listener in list(self._payload_listeners):
+            try:
+                listener()
+            except Exception:
+                _LOGGER.exception("Payload listener failed")
 
     def _payload_signature_of(self) -> tuple[Any, ...]:
         """Fields whose change makes the payload worth pushing."""
         parts: list[Any] = [
             self.entry.options.get(CONF_MOISTURE_DEFAULT),
             self.entry.options.get(CONF_BATTERY_SUSPECT_DAYS),
-            self.verdict_version,
         ]
         for plant_id in sorted(self.plants):
             plant = self.plants[plant_id]
@@ -410,7 +426,9 @@ class WateringCoordinator:
                     plant.battery_entity_id,
                     plant.temperature_entity_id,
                     verdict.status if verdict else None,
+                    verdict.needs_water if verdict else None,
                     verdict.zero_days if verdict else None,
+                    verdict.battery_value if verdict else None,
                 )
             )
         parts.append(tuple((item.device_id, item.reason) for item in self.excluded))
@@ -439,7 +457,36 @@ class WateringCoordinator:
             except Exception:
                 _LOGGER.exception("Entity listener failed")
 
+    @callback
+    def async_add_payload_listener(self, listener: Callable[[], None]) -> Callable[[], None]:
+        """Register a callback fired whenever the payload signature changes."""
+        self._payload_listeners.append(listener)
+
+        @callback
+        def _remove() -> None:
+            if listener in self._payload_listeners:
+                self._payload_listeners.remove(listener)
+
+        return _remove
+
     # -- accessors ---------------------------------------------------------
+
+    def snapshot(self, *, entity_allowed: Callable[[str], bool] | None = None) -> dict:
+        """Build the payload, optionally filtered per connection user."""
+        facts = {
+            plant.battery_entity_id: fact
+            for plant in self.plants.values()
+            if plant.battery_entity_id
+            and (fact := self.battery.facts(plant.battery_entity_id)) is not None
+        }
+        return build_payload(
+            self.entry,
+            self.plants,
+            self.verdicts,
+            self.excluded,
+            facts,
+            entity_allowed=entity_allowed,
+        )
 
     def plant(self, plant_id: str) -> PlantRecord | None:
         """Return the current record for one plant."""

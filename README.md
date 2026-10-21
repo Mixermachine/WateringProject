@@ -168,7 +168,9 @@ Payload:
 excluded, config, schema_version, int(zero_days)`.
 Explicitly **not hashed**: `moisture` (changes on every Zigbee report), `battery.last_seen`,
 `battery.last_value`, and the fractional part of `zero_days`. `int(zero_days)` gives at most
-one push per day per suspect plant.
+one push per day per suspect plant. `moisture` is excluded from the internal verdict-change
+key as well: the card reads the live value from `hass.states`, so counting it would turn every
+Zigbee report into a push.
 
 The card subscribes on mount and renders the latest payload; events arrive in order on a
 single connection, so no watermark is needed. `not_loaded` → error row with retry; no
@@ -435,8 +437,9 @@ Auto-registration was cut deliberately: it was the most version-fragile code in 
 resources on every restart, cache-busting) for a saving of one user click.
 
 - Static path is registered **once in `async_setup`** via
-  `async_register_static_paths([StaticPathConfig(...)])`, guarded by a `hass.data` flag —
-  per-entry registration raises on the duplicate aiohttp route after the first reload.
+  `hass.http.async_register_static_paths([StaticPathConfig(...)])` (the module-level helper
+  was removed in 2026.x), guarded by a `hass.data` flag — per-entry registration raises on the
+  duplicate aiohttp route after the first reload.
 - Serve with `cache_headers=False` (defaults send `max-age=2678400`), and instruct the user
   once, in README and docs:
 
@@ -689,9 +692,9 @@ npx playwright test
 
 Lint/format: `ruff check` + `ruff format` (Python), `eslint` + `prettier` (TS), pre-commit.
 
-Status: 118 tests green in ~9 s on HA 2026.10.2 / Python 3.14 (classification, discovery,
+Status: 143 tests green in ~19 s on HA 2026.10.2 / Python 3.14 (classification, discovery,
 battery tracker, verdict history, evaluation pipeline, entities, config/options flow, version
-gate, golden fixture).
+gate, notification matrix, websocket subscription, diagnostics, golden fixture).
 
 ---
 
@@ -701,6 +704,9 @@ gate, golden fixture).
 custom_components/watering_project/
   __init__.py            # async_setup (static path), async_setup_entry, unload
   evaluate.py            # async_evaluate() single-flight pipeline + triggers + teardown
+  payload.py             # payload contract + change signature
+  notifications.py       # confirmed recovery, hard floor, repair issues
+  websocket_api.py       # watering_project/subscribe + permission filter
   discovery.py           # single discovery authority
   classification.py      # pure verdict function
   battery.py             # battery observation tracker
@@ -725,9 +731,9 @@ frontend/
   package.json, vite.config.ts, tsconfig.json
 tests/
   conftest.py, test_classification.py, test_discovery.py, test_battery.py,
-  test_verdicts.py, test_golden.py
-  # M2+: test_entities.py, test_notifications.py, test_websocket.py,
-  # test_evaluate.py, test_diagnostics.py
+  test_verdicts.py, test_evaluate.py, test_entities.py, test_config_flow.py,
+  test_notifications.py, test_websocket.py, test_diagnostics.py, test_init.py,
+  test_golden.py
 docker/test.Dockerfile   # Linux test image (authoritative harness)
 tests/e2e/
   docker-compose.yml, playwright.config.ts
@@ -787,7 +793,8 @@ step titles.
      `notify.` normalisation), `strings.json` / `translations/en.json`. **Done.**
    - **M2b — notifications + transport**: notification decision (confirmed recovery + hard
      floor, write-ahead state), repair issues, `watering_project/subscribe` with
-     per-connection permission filtering, payload builder + signature, static path.
+     per-connection permission filtering, payload builder + signature, static path,
+     diagnostics. **Done.**
 3. **M3 — show**: card (sections, ordering, badges, collapse, states), Vitest + browser mode.
 4. **M4 — prove**: `dev/fake_plants` + notify stub, docker compose, onboarding/options
    harness, pre-seeded storage fixture, all 8 Playwright scenarios.
@@ -817,26 +824,25 @@ MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Aaron Dietz.
 
 ## Status
 
-M0, M1 and M2a implemented. M2b-M5 pending. Repository:
+M0, M1, M2a and M2b implemented. M3–M5 pending. Repository:
 <https://github.com/Mixermachine/WateringProject> (private, branch `main`).
 
 Implemented:
 
-- **M1** - decide layer: `store.py`, `discovery.py`, `battery.py`, `verdicts.py`,
+- **M1** — decide layer: `store.py`, `discovery.py`, `battery.py`, `verdicts.py`,
   `classification.py`, golden contract fixture.
-- **M2a** - `evaluate.py` (single-flight pipeline, debounced state/registry triggers, 60 s
+- **M2a** — `evaluate.py` (single-flight pipeline, debounced state/registry triggers, 60 s
   timer with skip guard, teardown), `binary_sensor.py` + `sensor.py` (per-plant
   `needs_water`/`status`, aggregates on a service device), `config_flow.py` (single instance,
   options flow with device selectors and notify validation), `strings.json` +
   `translations/en.json`.
+- **M2b** — `notifications.py` (confirmed recovery, hard floor, write-ahead state, repair
+  issues), `payload.py` (single payload contract + change signature), `websocket_api.py`
+  (`watering_project/subscribe` with per-connection permission filtering, initial payload
+  as an event), static path registration, `diagnostics.py` with redaction.
 
-118 tests green in the Linux image (HA 2026.10.2 / Python 3.14). Still missing: notifications,
-repair issues, `watering_project/subscribe`, the card, fake hardware and e2e.
-
-Version policy: `manifest.json` stays at `0.1.0` until the first real install at M4, which is
-tagged and paired with `?v=` on the Lovelace resource. The supported Home Assistant floor is
-`2026.10.0`, declared in `hacs.json` and enforced at runtime.
-
+143 tests green in the Linux image (HA 2026.10.2 / Python 3.14). Still missing: the card,
+fake hardware and e2e.
 
 Assumed defaults unless revised: MIT license, `manifest.json` version `0.1.0`, plant label
 from device name, English only, single notify target, single config entry, no overwatering

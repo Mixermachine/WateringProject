@@ -8,6 +8,7 @@ signature they will use.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 from awesomeversion import AwesomeVersion
@@ -16,6 +17,7 @@ from homeassistant.const import __version__ as HA_VERSION
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
 
+from . import websocket_api
 from .battery import BatteryTracker
 from .const import DOMAIN, MIN_HOMEASSISTANT_VERSION
 from .evaluate import WateringCoordinator, WateringRuntime
@@ -38,9 +40,40 @@ def homeassistant_version_supported(version: str) -> bool:
         return False
 
 
+WWW_PATH: Final = Path(__file__).parent / "www"
+STATIC_URL_PATH: Final = f"/{DOMAIN}"
+
+
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
-    """Set up the integration (no YAML configuration in v1)."""
-    hass.data.setdefault(DOMAIN, {})
+    """Register process-wide resources exactly once.
+
+    Both the websocket command and the static path are process-wide, while config
+    entries can reload. Registering them per entry would double-register the
+    aiohttp route and silently overwrite the command handler.
+    """
+    data = hass.data.setdefault(DOMAIN, {})
+    if not data.get("websocket_registered"):
+        websocket_api.async_register(hass)
+        data["websocket_registered"] = True
+
+    if not data.get("static_registered"):
+        data["static_registered"] = True
+        if WWW_PATH.is_dir():
+            from homeassistant.components.http import StaticPathConfig
+
+            await hass.http.async_register_static_paths(
+                [
+                    StaticPathConfig(
+                        STATIC_URL_PATH,
+                        str(WWW_PATH),
+                        # 31-day default caching would pin a stale card.
+                        cache_headers=False,
+                    )
+                ]
+            )
+        else:
+            _LOGGER.debug("No card bundle at %s yet; static path not registered", WWW_PATH)
+
     return True
 
 
