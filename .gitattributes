@@ -1,0 +1,8 @@
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+
+# Golden contract fixture must stay byte-stable across platforms
+frontend/test/fixtures/*.json text eol=lf
