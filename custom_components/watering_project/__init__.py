@@ -1,9 +1,8 @@
 """Watering Project integration.
 
-M1 scope: the decide layer (store, discovery, battery tracker, verdict history,
-classification). The evaluation pipeline, entities, notifications and websocket
-subscription arrive in M2; until then the config entry loads only its persisted
-state, so storage format and migrations can be tested in isolation.
+M2a: evaluation pipeline, entities and config/options flow. Notifications and
+the websocket subscription are M2b; the pipeline already records the payload
+signature they will use.
 """
 
 from __future__ import annotations
@@ -11,10 +10,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Final
 
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
 from .battery import BatteryTracker
 from .const import DOMAIN
+from .evaluate import WateringCoordinator, WateringRuntime
 from .store import WateringStore
 from .verdicts import VerdictHistory
 
@@ -23,11 +24,7 @@ if TYPE_CHECKING:
 
 _LOGGER: Final = logging.getLogger(__name__)
 
-PLATFORMS: Final[tuple[str, ...]] = ()
-
-DATA_STORE: Final = "store"
-DATA_BATTERY: Final = "battery"
-DATA_VERDICTS: Final = "verdicts"
+PLATFORMS: Final[tuple[Platform, ...]] = (Platform.BINARY_SENSOR, Platform.SENSOR)
 
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
@@ -37,30 +34,45 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Load persisted state for one config entry."""
+    """Set up one config entry: load state, evaluate, start triggers."""
     store = WateringStore(hass, entry.entry_id)
     await store.async_load()
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-        DATA_STORE: store,
-        DATA_BATTERY: BatteryTracker(store),
-        DATA_VERDICTS: VerdictHistory(store),
-    }
+    battery = BatteryTracker(store)
+    history = VerdictHistory(store)
+    coordinator = WateringCoordinator(hass, entry, store, battery, history)
 
-    _LOGGER.debug("%s loaded for entry %s", DOMAIN, entry.entry_id)
+    entry.runtime_data = WateringRuntime(
+        store=store,
+        battery=battery,
+        history=history,
+        coordinator=coordinator,
+    )
+
+    await coordinator.async_start()
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+    _LOGGER.debug("%s set up for entry %s", DOMAIN, entry.entry_id)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload one config entry, flushing pending storage writes."""
-    data = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
-    if data is not None:
-        store: WateringStore = data[DATA_STORE]
-        await store.async_flush()
-    return True
+    """Unload platforms and cancel every trigger."""
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unloaded:
+        runtime: WateringRuntime | None = getattr(entry, "runtime_data", None)
+        if runtime is not None:
+            await runtime.coordinator.async_stop()
+    return unloaded
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Delete persisted state when the entry is removed."""
     store = WateringStore(hass, entry.entry_id)
     await store.async_remove()
+
+
+async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload the entry so new options take effect immediately."""
+    await hass.config_entries.async_reload(entry.entry_id)

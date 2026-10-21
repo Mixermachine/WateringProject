@@ -1,0 +1,68 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Watering Project",
+        "description": "Discovers plant moisture sensors and exposes a per-plant status. Thresholds and device selection are configured afterwards in the integration options."
+      }
+    },
+    "abort": {
+      "already_configured": "Watering Project is already set up. Use the integration options to change thresholds or select devices."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Watering Project options",
+        "description": "Plants are grouped by room. Devices whose names look like leak or flood sensors are excluded automatically unless you list them under include devices.",
+        "data": {
+          "moisture_default": "Moisture threshold",
+          "battery_suspect_days": "Battery suspect duration",
+          "include_devices": "Include devices",
+          "exclude_devices": "Exclude devices",
+          "notify_enabled": "Enable notifications",
+          "notify_service": "Notify service",
+          "notify_repeat_hours": "Repeat notification after",
+          "notify_url": "Dashboard deep link"
+        },
+        "data_description": {
+          "moisture_default": "Below this percentage a plant is reported as dry. Capacitive sensors often read around 70% on already dry soil.",
+          "battery_suspect_days": "How long a battery must report 0% before the sensor is treated as untrustworthy.",
+          "include_devices": "Overrides the automatic leak-sensor exclusion. Empty means all detected devices.",
+          "exclude_devices": "Always ignored, wins over include devices.",
+          "notify_service": "Service name without the notify. prefix, for example mobile_app_pixel.",
+          "notify_repeat_hours": "0 sends one notification per drought; the reminder repeats otherwise.",
+          "notify_url": "Optional URL opened when the notification is tapped, for example /lovelace/0."
+        }
+      }
+    },
+    "error": {
+      "notify_service_required": "Pick a notify service or disable notifications.",
+      "notify_service_not_found": "That notify service is not registered in Home Assistant."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "needs_water": {
+        "name": "Needs water"
+      },
+      "plants_need_water": {
+        "name": "Plants need water"
+      }
+    },
+    "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "suspect_battery": "Battery suspect",
+          "no_data": "No data",
+          "dry": "Too dry",
+          "healthy": "Well watered"
+        }
+      },
+      "plants_needing_water": {
+        "name": "Plants needing water"
+      }
+    }
+  }
+}

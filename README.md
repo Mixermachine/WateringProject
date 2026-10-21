@@ -326,7 +326,12 @@ Naming and identity:
   on the same `suggested_object_id`.
 - `unique_id = f"{DOMAIN}_{entry_id}_{plant_id}_{kind}"`.
 - Aggregates get their own virtual service device
-  `DeviceInfo(identifiers={(DOMAIN, entry_id)}, entry_type=DeviceEntryType.SERVICE)`.
+  `DeviceInfo(identifiers={(DOMAIN, entry_id)}, entry_type=DeviceEntryType.SERVICE)`. Because
+  `has_entity_name = True` and the device is named *Watering Project*, their entity ids are
+  prefixed: `sensor.watering_project_plants_needing_water`,
+  `binary_sensor.watering_project_plants_need_water`. Per-plant entities use the source
+  device name instead (`binary_sensor.ficus_needs_water`, `sensor.ficus_status`) — these are
+  the ids automations should reference.
 - v1 is single-instance (`async_abort` on a second entry), and every `unique_id` and the
   store filename are still keyed by `entry_id`.
 
@@ -772,9 +777,15 @@ step titles.
    while committing the card build output. **Done.**
 1. **M1 — decide**: `discovery.py`, `battery.py`, `verdicts.py`, `store.py`,
    `classification.py`, pytest + golden fixture. **Done — 84 tests green.**
-2. **M2 — expose**: `evaluate.py` (single-flight, triggers, teardown), entities,
-   notifications + repair issues, `watering_project/subscribe` with permission filtering,
-   static path.
+2. **M2 — expose** (split):
+   - **M2a — pipeline + entities + config**: `evaluate.py` (single-flight, debounced state and
+     registry triggers, 60 s timer with skip guard, teardown), `binary_sensor.py`,
+     `sensor.py`, `config_flow.py` (single instance + options flow with validation and
+     `notify.` normalisation), `strings.json` / `translations/en.json`. **Done — 114 tests
+     green.**
+   - **M2b — notifications + transport**: notification decision (confirmed recovery + hard
+     floor, write-ahead state), repair issues, `watering_project/subscribe` with
+     per-connection permission filtering, payload builder + signature, static path.
 3. **M3 — show**: card (sections, ordering, badges, collapse, states), Vitest + browser mode.
 4. **M4 — prove**: `dev/fake_plants` + notify stub, docker compose, onboarding/options
    harness, pre-seeded storage fixture, all 8 Playwright scenarios.
@@ -804,15 +815,22 @@ MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Aaron Dietz.
 
 ## Status
 
-M1 implemented. M2–M5 pending. Repository:
+M0, M1 and M2a implemented. M2b-M5 pending. Repository:
 <https://github.com/Mixermachine/WateringProject> (private, branch `main`).
 
-M1 delivers the decide layer: `store.py` (one versioned document per entry),
-`discovery.py` (single authority, inclusion precedence, area chain), `battery.py`
-(restart-proof `zero_since`), `verdicts.py` (hysteresis across restarts) and
-`classification.py` (pure, injected `now`). 84 tests plus the golden contract fixture the
-card will consume. `manifest.json` is registered but `config_flow` is still `false`, and no
-entities, notifications or websocket subscription exist yet — those are M2.
+Implemented:
+
+- **M1** - decide layer: `store.py`, `discovery.py`, `battery.py`, `verdicts.py`,
+  `classification.py`, golden contract fixture.
+- **M2a** - `evaluate.py` (single-flight pipeline, debounced state/registry triggers, 60 s
+  timer with skip guard, teardown), `binary_sensor.py` + `sensor.py` (per-plant
+  `needs_water`/`status`, aggregates on a service device), `config_flow.py` (single instance,
+  options flow with device selectors and notify validation), `strings.json` +
+  `translations/en.json`.
+
+114 tests green natively and in the Linux test image. Still missing: notifications, repair
+issues, `watering_project/subscribe`, the card, fake hardware and e2e.
+
 
 Assumed defaults unless revised: MIT license, `manifest.json` version `0.1.0`, plant label
 from device name, English only, single notify target, single config entry, no overwatering

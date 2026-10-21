@@ -1,9 +1,14 @@
 {
   "domain": "watering_project",
   "name": "Watering Project",
-  "codeowners": ["@Mixermachine"],
-  "config_flow": false,
-  "dependencies": ["http", "websocket_api"],
+  "codeowners": [
+    "@Mixermachine"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "http",
+    "websocket_api"
+  ],
   "documentation": "https://github.com/Mixermachine/WateringProject#readme",
   "integration_type": "hub",
   "iot_class": "local_polling",
