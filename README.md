@@ -31,6 +31,7 @@ actually meaningful. Plant status must not be polluted by those false alarms.
 - Multiple notification targets, per-plant notification rules, quiet hours.
 - Multiple config entries (single instance in v1).
 - Auto-registering the Lovelace resource (see Registration).
+- Publishing to HACS, auto-update, update notifications (scaffolding is kept, see Deployment).
 - Blueprints (built-in notifier covers v1).
 
 ---
@@ -443,8 +444,55 @@ lovelace:
 - Documented consequence: after an upgrade the user must bump `?v=` manually, otherwise the
   cached card persists (companion-app webviews cache JS aggressively).
 - `manifest.json`: `"homeassistant": "2025.2.0"`, `"dependencies": ["http", "websocket_api"]`,
-  `"documentation"`, `"issue_tracker"`, `"iot_class": "local_polling"`,
-  `"integration_type": "hub"`.
+  `"documentation": "https://github.com/Mixermachine/WateringProject#readme"`,
+  `"issue_tracker": "https://github.com/Mixermachine/WateringProject/issues"`,
+  `"iot_class": "local_polling"`, `"integration_type": "hub"`.
+
+---
+
+## Deployment
+
+No publishing required. Primary path is a Docker-mounted dev instance; the same folder works
+as a manual install on a real HA instance.
+
+**Repository:** <https://github.com/Mixermachine/WateringProject> (private). HACS is not used.
+
+### Docker mount (primary dev / e2e path)
+
+```yaml
+volumes:
+  - ./custom_components/watering_project:/config/custom_components/watering_project
+```
+
+Live-edited, no build step on the HA side: the card JS is committed build output
+(`custom_components/watering_project/www/watering-project-card.js`).
+
+### Manual install on a real instance
+
+1. Copy the **whole** `custom_components/watering_project/` folder to
+   `/config/custom_components/watering_project/`. The folder name must equal the domain
+   `watering_project` — a partial or renamed copy is the usual "integration not found" cause.
+   No Node, no npm, no Python install needed on the HA host.
+2. Restart Home Assistant.
+3. Add the integration (Settings → Devices & services → Add integration → *Watering Project*)
+   and pick the plant devices in the options flow.
+4. Add the Lovelace resource once (see Registration above), then add the card.
+
+### Upgrade
+
+Replace the folder, restart HA, and bump the `?v=` query on the resource line (for example
+`?v=0.1.0` → `?v=0.2.0`). Skipping the `?v=` bump leaves the old card cached — companion-app
+webviews cache JS aggressively. Payload compatibility across mismatched versions is handled by
+`schema_version` and rendered as a mismatch row rather than a blank card.
+
+### Distribution status
+
+- Ships **without** HACS, without a release workflow, without auto-update and without update
+  notifications.
+- Publishing scaffolding is kept but inactive: `hacs.json` and the manifest metadata above are
+  present so that publishing later is a repository-visibility change plus a tag, not a refactor.
+- HACS validation in CI is enabled when the repository becomes public; `hassfest` runs from
+  day one because it validates the manifest, strings and translations we rely on.
 
 ---
 
@@ -587,7 +635,8 @@ restart with a plant at `0%` keeps `zero_days`; 10-minute soak.
   failure opens a bump PR.
 - **Job C**: `vitest` (jsdom + browser mode) + `vite build`.
 - **Job D**: docker compose + Playwright, artifacts on failure.
-- **Job E**: `hassfest` + HACS validation.
+- **Job E**: `hassfest` from day one (validates manifest, strings, translations we rely on). HACS
+  validation is enabled once the repository becomes public.
 
 ---
 
@@ -655,7 +704,8 @@ tests/e2e/
 dev/fake_plants/         # dev-only fake hardware + notify.fake_phone
 .github/workflows/
   tests.yml, e2e.yml, hassfest.yml
-hacs.json
+hacs.json                # publish-ready, inactive (no HACS install in v1)
+LICENSE                  # MIT
 requirements_test_min.txt, requirements_test_latest.txt
 ```
 
@@ -693,6 +743,8 @@ step titles.
 
 ## Milestones
 
+0. **M0 — repo**: local git, private remote, `.gitignore` covering Python/Node/e2e artifacts
+   while committing the card build output. **Done.**
 1. **M1 — decide**: `discovery.py`, `battery.py`, `verdicts.py`, `store.py`,
    `classification.py`, pytest + golden fixture.
 2. **M2 — expose**: `evaluate.py` (single-flight, triggers, teardown), entities,
@@ -701,8 +753,8 @@ step titles.
 3. **M3 — show**: card (sections, ordering, badges, collapse, states), Vitest + browser mode.
 4. **M4 — prove**: `dev/fake_plants` + notify stub, docker compose, onboarding/options
    harness, pre-seeded storage fixture, all 8 Playwright scenarios.
-5. **M5 — package**: `hacs.json`, strings/translations, hassfest/HACS jobs, release workflow,
-   README resource instructions.
+5. **M5 — package**: `hacs.json` (inactive), strings/translations, hassfest job, README install
+   + upgrade instructions. Release workflow and HACS publication stay deferred.
 
 ## Definition of done (v1)
 
@@ -721,8 +773,9 @@ step titles.
 
 ## Status
 
-Specification complete, implementation not started.
+Specification complete, implementation not started. Repository:
+<https://github.com/Mixermachine/WateringProject> (private, branch `main`).
 
 Assumed defaults unless revised: MIT license, `manifest.json` version `0.1.0`, plant label
 from device name, English only, single notify target, single config entry, no overwatering
-threshold, manual resource registration.
+threshold, manual resource registration, no HACS publishing.
