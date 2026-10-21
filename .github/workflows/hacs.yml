@@ -1,0 +1,20 @@
+name: hacs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 4 * * 1"
+
+jobs:
+  validate:
+    name: HACS validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hacs/action@main
+        with:
+          category: integration
+          # Custom integrations are not in home-assistant/brands.
+          ignore: brands
