@@ -1,0 +1,4 @@
+# Nightly compatibility leg only (CI job "latest", continue-on-error).
+# The package pins exactly one homeassistant + pytest release, so this file must
+# never be merged with requirements_test_min.txt.
+pytest-homeassistant-custom-component

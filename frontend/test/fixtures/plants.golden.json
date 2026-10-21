@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "config": {
+    "moisture_default": 70,
+    "battery_suspect_days": 30,
+    "include_devices": [],
+    "exclude_devices": [],
+    "notify_enabled": false
+  },
+  "plants": [
+    {
+      "plant_id": "dev_ficus",
+      "label": "Ficus",
+      "area_id": "kitchen",
+      "area_name": "Kitchen",
+      "moisture_entity_id": "sensor.ficus_moisture",
+      "battery_entity_id": "sensor.ficus_battery",
+      "temperature_entity_id": "sensor.ficus_temperature",
+      "threshold": null,
+      "status": "dry",
+      "needs_water": true,
+      "moisture": 42.0,
+      "zero_days": null,
+      "battery": {
+        "last_value": 80,
+        "last_seen": "2026-01-15T10:00:00+00:00",
+        "never_reported": false
+      }
+    },
+    {
+      "plant_id": "dev_monstera",
+      "label": "Monstera",
+      "area_id": "kitchen",
+      "area_name": "Kitchen",
+      "moisture_entity_id": "sensor.monstera_moisture",
+      "battery_entity_id": "sensor.monstera_battery",
+      "temperature_entity_id": null,
+      "threshold": null,
+      "status": "suspect_battery",
+      "needs_water": false,
+      "moisture": 12.5,
+      "zero_days": 31,
+      "battery": {
+        "last_value": 0,
+        "last_seen": "2026-01-15T07:00:00+00:00",
+        "never_reported": false
+      }
+    },
+    {
+      "plant_id": "dev_basil",
+      "label": "Basil",
+      "area_id": "bedroom",
+      "area_name": "Bedroom",
+      "moisture_entity_id": "sensor.basil_moisture",
+      "battery_entity_id": "sensor.basil_battery",
+      "temperature_entity_id": "sensor.basil_temperature",
+      "threshold": null,
+      "status": "no_data",
+      "needs_water": false,
+      "moisture": null,
+      "zero_days": null,
+      "battery": {
+        "last_value": null,
+        "last_seen": null,
+        "never_reported": true
+      }
+    },
+    {
+      "plant_id": "dev_cactus",
+      "label": "Cactus",
+      "area_id": null,
+      "area_name": null,
+      "moisture_entity_id": "sensor.cactus_moisture",
+      "battery_entity_id": null,
+      "temperature_entity_id": null,
+      "threshold": null,
+      "status": "healthy",
+      "needs_water": false,
+      "moisture": 91.0,
+      "zero_days": null,
+      "battery": {
+        "last_value": null,
+        "last_seen": null,
+        "never_reported": true
+      }
+    },
+    {
+      "plant_id": "dev_orchid",
+      "label": "Orchid",
+      "area_id": "bedroom",
+      "area_name": "Bedroom",
+      "moisture_entity_id": "sensor.orchid_moisture",
+      "battery_entity_id": "sensor.orchid_battery",
+      "temperature_entity_id": null,
+      "threshold": null,
+      "status": "dry",
+      "needs_water": true,
+      "moisture": 72.0,
+      "zero_days": null,
+      "battery": {
+        "last_value": 255,
+        "last_seen": "2026-01-15T11:30:00+00:00",
+        "never_reported": false
+      }
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "suspect_battery": 1,
+    "dry": 2,
+    "no_data": 1,
+    "healthy": 1,
+    "needs_water": true
+  },
+  "excluded": [
+    {
+      "device_id": "dev_leak",
+      "label": "Basement leak sensor",
+      "reason": "keyword:leak"
+    },
+    {
+      "device_id": "dev_garage",
+      "label": "Garage sensor",
+      "reason": "not_included"
+    }
+  ]
+}

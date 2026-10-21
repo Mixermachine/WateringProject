@@ -239,8 +239,9 @@ project exists for.
 - Rules per state change:
   - finite and `<= 1` → set `zero_since = now` if unset; update `last_value`/`last_seen`.
   - finite and `> 1` → clear `zero_since`.
-  - out of range (`<0`, `>100`) or non-numeric → unknown: keep `zero_since`, update
-    `last_seen`.
+  - out of range (`<0`, `>100`) or non-numeric → unknown: keep `zero_since`, record the value
+    only if it is numeric. **Only a numeric reading advances `last_seen`** — otherwise an
+    entity that has been `unavailable` for a year would never be pruned.
   - `never_reported` stays true until the first numeric value — reported truthfully instead
     of conflated with "no such entity".
 - Persisted `zero_since` loads **before** the first evaluation, so `0%` keeps accumulating
@@ -578,9 +579,19 @@ Hard requirement: no real Zigbee hardware, no phone. Six layers.
   receives updates; reconnect re-delivers a full payload; unsubscribed/closed connections are
   skipped; `not_loaded` error shape.
 - Diagnostics: redaction verified.
-- **Golden fixture**: `test_golden` freezes time (`freezer.move_to(fixed instant)`) before
-  seeding and evaluating, so the committed `frontend/test/fixtures/plants.golden.json` is
-  byte-stable.
+- **Golden fixture**: `test_golden` builds the payload with a **fixed `now` constant** and
+  serialises `zero_days` as an integer, so `frontend/test/fixtures/plants.golden.json` is
+  byte-stable without freezing the clock. `pytest --update-golden` regenerates it; CI fails
+  on drift.
+
+### Harness constraints
+
+The suite is authoritative on **Linux**: `pytest-homeassistant-custom-component==0.13.215`
+(which pins `homeassistant==2025.2.5`, Python ≥ 3.13) blocks sockets except AF_UNIX, and
+`aiodns` refuses the Proactor loop Windows forces on Home Assistant. Run it via
+`docker/test.Dockerfile` locally. Windows-native runs work for quick iteration because
+`tests/conftest.py` neutralises those two harness behaviours, but they are not the reference
+environment.
 
 ### L3 — card (Vitest + jsdom, golden fixture)
 
@@ -643,12 +654,15 @@ restart with a plant at `0%` keeps `zero_days`; 10-minute soak.
 ## Development
 
 ```bash
-# integration
-python -m venv .venv && . .venv/bin/activate
-pip install -r requirements_test_min.txt
-pytest -q
+# integration tests (Linux; the image is built once and then reused)
+docker build -f docker/test.Dockerfile -t watering-project-tests .
+docker run --rm -v "$PWD":/work -w /work watering-project-tests pytest -q
 
-# regenerate the contract fixture (must run with frozen time)
+# native Windows quick loop (same suite; harness quirks neutralised in conftest.py)
+python -m venv .venv && .venv/Scripts/python.exe -m pip install -r requirements_test_min.txt
+.venv/Scripts/python.exe -m pytest -q
+
+# regenerate the contract fixture consumed by Vitest
 pytest -q tests/test_golden.py --update-golden
 
 # card
@@ -660,7 +674,10 @@ cd tests/e2e && docker compose up -d --build
 npx playwright test
 ```
 
-Lint/format: `ruff` (Python), `eslint` + `prettier` (TS), pre-commit.
+Lint/format: `ruff check` + `ruff format` (Python), `eslint` + `prettier` (TS), pre-commit.
+
+M1 status: 84 tests green in ~1.5 s (classification, discovery, battery tracker, verdict
+history, golden fixture).
 
 ---
 
@@ -694,8 +711,10 @@ frontend/
   package.json, vite.config.ts, tsconfig.json
 tests/
   conftest.py, test_classification.py, test_discovery.py, test_battery.py,
-  test_verdicts.py, test_entities.py, test_notifications.py, test_websocket.py,
-  test_evaluate.py, test_diagnostics.py, test_golden.py
+  test_verdicts.py, test_golden.py
+  # M2+: test_entities.py, test_notifications.py, test_websocket.py,
+  # test_evaluate.py, test_diagnostics.py
+docker/test.Dockerfile   # Linux test image (authoritative harness)
 tests/e2e/
   docker-compose.yml, playwright.config.ts
   harness/{onboarding,token,options,dashboard}.ts
@@ -746,7 +765,7 @@ step titles.
 0. **M0 — repo**: local git, private remote, `.gitignore` covering Python/Node/e2e artifacts
    while committing the card build output. **Done.**
 1. **M1 — decide**: `discovery.py`, `battery.py`, `verdicts.py`, `store.py`,
-   `classification.py`, pytest + golden fixture.
+   `classification.py`, pytest + golden fixture. **Done — 84 tests green.**
 2. **M2 — expose**: `evaluate.py` (single-flight, triggers, teardown), entities,
    notifications + repair issues, `watering_project/subscribe` with permission filtering,
    static path.
@@ -771,10 +790,23 @@ step titles.
 
 ---
 
+## License
+
+MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Aaron Dietz.
+
+---
+
 ## Status
 
-Specification complete, implementation not started. Repository:
+M1 implemented. M2–M5 pending. Repository:
 <https://github.com/Mixermachine/WateringProject> (private, branch `main`).
+
+M1 delivers the decide layer: `store.py` (one versioned document per entry),
+`discovery.py` (single authority, inclusion precedence, area chain), `battery.py`
+(restart-proof `zero_since`), `verdicts.py` (hysteresis across restarts) and
+`classification.py` (pure, injected `now`). 84 tests plus the golden contract fixture the
+card will consume. `manifest.json` is registered but `config_flow` is still `false`, and no
+entities, notifications or websocket subscription exist yet — those are M2.
 
 Assumed defaults unless revised: MIT license, `manifest.json` version `0.1.0`, plant label
 from device name, English only, single notify target, single config entry, no overwatering
