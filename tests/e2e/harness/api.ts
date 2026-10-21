@@ -69,7 +69,10 @@ export async function waitForHomeAssistant(timeoutMs = 600_000): Promise<void> {
   while (Date.now() < deadline) {
     try {
       const response = await fetch(`${BASE_URL}/auth/providers`);
-      if (response.status === 200) {
+      // 200 once onboarded; 400 `onboarding_required` on a fresh instance. Both
+      // mean the auth stack is up. Never probe `/api/*`: those 401 and the runner
+      // IP gets banned.
+      if (response.status === 200 || response.status === 400) {
         return;
       }
     } catch {
