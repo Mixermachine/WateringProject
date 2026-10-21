@@ -468,6 +468,9 @@ lovelace:
 
 ## Deployment
 
+User-facing instructions live in [`docs/quickstart.md`](docs/quickstart.md); this section is
+the maintainer view.
+
 No publishing required. Primary path is a Docker-mounted dev instance; the same folder works
 as a manual install on a real HA instance.
 
@@ -773,8 +776,9 @@ tests/
   test_notifications.py, test_websocket.py, test_diagnostics.py, test_init.py,
   test_golden.py
 docker/test.Dockerfile   # Linux test image (authoritative harness)
+docs/quickstart.md          # user-facing install/configure/automation guide
 tests/e2e/
-  docker-compose.yml, playwright.config.ts, package.json, tsconfig.json
+  README.md, docker-compose.yml, playwright.config.ts, package.json, tsconfig.json
   config/{configuration.yaml,ui-lovelace.yaml}   # runtime state gitignored
   harness/{api,state,global-setup}.ts
   specs/watering-card.spec.ts                    # 8 scenarios

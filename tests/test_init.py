@@ -61,3 +61,16 @@ async def test_card_bundle_is_served(
     assert "watering-project-card" in await response.text()
     # Cache-busting is the user's job; the server must not pin the bundle.
     assert "max-age=2678400" not in response.headers.get("cache-control", "")
+
+
+def test_yaml_configuration_is_refused(caplog: pytest.LogCaptureFixture) -> None:
+    """The integration is config-entry only; a YAML block must be dropped loudly."""
+    from custom_components.watering_project import CONFIG_SCHEMA
+    from custom_components.watering_project.const import DOMAIN
+
+    # `config_entry_only_config_schema` logs an error instead of raising, so the
+    # log line is the contract that matters: the user gets told to remove the block.
+    CONFIG_SCHEMA({DOMAIN: {"notify_service": "x"}})
+    assert "does not support YAML setup" in caplog.text
+
+    assert CONFIG_SCHEMA({}) == {}

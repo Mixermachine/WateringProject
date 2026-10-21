@@ -13,7 +13,9 @@ import {
   waitForReloadedOptions,
 } from "../harness/state";
 
-test.describe.configure({ mode: "serial" });
+// Not `serial`: one failure must not skip the remaining scenarios. Each test
+// resets the fake plants and the options it depends on in `beforeEach`, so a
+// single worker can still run them in isolation.
 
 const card = (page: Page) => page.locator("watering-project-card");
 const section = (page: Page, key: string) => card(page).locator(`[data-section="${key}"]`);

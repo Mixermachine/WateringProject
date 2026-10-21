@@ -475,3 +475,93 @@ describe("update budget", () => {
     expect(perUpdate).toBeLessThan(0.1);
   });
 });
+
+describe("metadata and lifecycle", () => {
+  it("renders an optional title and omits it by default", async () => {
+    const titled = await mount(cloneGolden(), {}, { ...CONFIG, title: "My Plants" });
+    expect(textOf(titled.element, ".card-title")).toBe("My Plants");
+    expect(titled.element.shadowRoot?.querySelector("h2")).not.toBeNull();
+
+    document.body.innerHTML = "";
+    const plain = await mount(cloneGolden());
+    expect(plain.element.shadowRoot?.querySelector("h2")).toBeNull();
+  });
+
+  it("reports a card size and grid options for the layout engine", async () => {
+    const { card } = await mount(cloneGolden());
+
+    const size = card.getCardSize();
+    expect(size).toBeGreaterThan(3);
+    expect(Number.isInteger(size)).toBe(true);
+
+    expect(card.getGridOptions()).toMatchObject({ columns: 12, min_columns: 6 });
+  });
+
+  it("falls back to the payload moisture when the entity has no state", async () => {
+    const plant = makePlant({ plant_id: "a", label: "A", moisture: 47 });
+    const { element } = await mount(payload([plant]));
+
+    expect(textOf(element, ".moisture")).toBe("47 %");
+  });
+
+  it("shows a single day in the flat-battery line", async () => {
+    const plant = makePlant({
+      plant_id: "s",
+      label: "S",
+      status: "suspect_battery",
+      needs_water: false,
+      zero_days: 1,
+      moisture: 10,
+    });
+    const { element, card } = await mount(payload([plant]));
+
+    query<HTMLButtonElement>(element, ".section-suspect .plant-row")?.click();
+    await card.updateComplete;
+
+    expect(query(element, ".section-suspect .details")?.textContent).toContain("1 day");
+    expect(query(element, ".section-suspect .details")?.textContent).not.toContain("1 days");
+  });
+
+  it("hides the excluded footer when nothing is excluded", async () => {
+    const { element } = await mount(payload([makePlant({ label: "A" })]));
+
+    expect(query(element, "details.excluded")).toBeNull();
+  });
+
+  it("resubscribes after being detached and reattached", async () => {
+    const hass = makeHass({
+      "sensor.plant_moisture": { state: "40", attributes: {} },
+    });
+    const { card, element } = await mount(hass);
+    push(hass, payload([makePlant({ plant_id: "a", label: "A" })]));
+    await card.updateComplete;
+    expect(hass.fake.subscribes).toBe(1);
+
+    element.remove();
+    await Promise.resolve();
+    expect(hass.fake.unsubscribe).toHaveBeenCalledTimes(1);
+
+    document.body.appendChild(element);
+    card.hass = hass;
+    await card.updateComplete;
+
+    expect(hass.fake.subscribes).toBe(2);
+    // Live state still wins for the displayed value; membership changes only via
+    // the payload, so push a status flip and watch the row move.
+    push(hass, payload([makePlant({ plant_id: "a", label: "A", status: "healthy" })]));
+    await card.updateComplete;
+
+    expect(textOf(element, ".moisture")).toBe("40 %");
+    expect(textOf(element, ".section-dry .section-empty")).toBe("No plants.");
+    expect(query(element, ".section-healthy")?.textContent).toContain("A");
+  });
+
+  it("drops a plant whose status the card does not know", async () => {
+    const known = makePlant({ plant_id: "a", label: "Known" });
+    const unknown = { ...makePlant({ plant_id: "b", label: "Future" }), status: "flooded" };
+    const { element } = await mount(payload([known, unknown as unknown as PlantRecord]));
+
+    expect(textOf(element, ".plant-name")).toBe("Known");
+    expect(element.shadowRoot?.textContent ?? "").not.toContain("Future");
+  });
+});

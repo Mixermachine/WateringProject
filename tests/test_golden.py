@@ -201,3 +201,81 @@ def test_golden_payload_covers_every_status() -> None:
     statuses = {plant["status"] for plant in build_payload()["plants"]}
 
     assert statuses == {"suspect_battery", "dry", "no_data", "healthy"}
+
+
+def test_golden_payload_boundaries() -> None:
+    """Assert what each plant means, not just that the file is stable.
+
+    `test_golden_fixture_is_stable` compares generated output to generated output,
+    so only explicit values catch a classification regression.
+    """
+    payload = build_payload()
+    plants = {plant["label"]: plant for plant in payload["plants"]}
+
+    # Below the threshold, battery fine.
+    assert plants["Ficus"]["status"] == "dry"
+    assert plants["Ficus"]["needs_water"] is True
+    assert plants["Ficus"]["moisture"] == 42.0
+    assert plants["Ficus"]["zero_days"] is None
+
+    # Flat battery for 31 days wins over dry: documented limitation, never thirsty.
+    assert plants["Monstera"]["status"] == "suspect_battery"
+    assert plants["Monstera"]["needs_water"] is False
+    assert plants["Monstera"]["zero_days"] == 31
+    assert plants["Monstera"]["battery"]["last_value"] == 0
+
+    # Unavailable moisture is "no data", never "dry".
+    assert plants["Basil"]["status"] == "no_data"
+    assert plants["Basil"]["moisture"] is None
+    assert plants["Basil"]["needs_water"] is False
+
+    # 91 % with no battery entity at all.
+    assert plants["Cactus"]["status"] == "healthy"
+    assert plants["Cactus"]["battery_entity_id"] is None
+    assert plants["Cactus"]["battery"]["never_reported"] is True
+
+    # 72 % would be healthy from scratch, but the previous status was dry and the
+    # release threshold is 75 %, so hysteresis keeps it dry.
+    assert plants["Orchid"]["status"] == "dry"
+    assert plants["Orchid"]["moisture"] == 72.0
+    # An out-of-range reading (255 %) is recorded but must not start a zero clock.
+    assert plants["Orchid"]["battery"]["last_value"] == 255
+    assert plants["Orchid"]["zero_days"] is None
+
+    assert payload["summary"] == {
+        "total": 5,
+        "suspect_battery": 1,
+        "dry": 2,
+        "no_data": 1,
+        "healthy": 1,
+        "needs_water": True,
+    }
+
+
+def test_golden_plant_contract_has_exactly_the_expected_fields() -> None:
+    """The card types must not silently gain or lose a field."""
+    plant = build_payload()["plants"][0]
+
+    assert set(plant) == {
+        "plant_id",
+        "label",
+        "area_id",
+        "area_name",
+        "moisture_entity_id",
+        "battery_entity_id",
+        "temperature_entity_id",
+        "threshold",
+        "status",
+        "needs_water",
+        "moisture",
+        "zero_days",
+        "battery",
+    }
+    assert set(plant["battery"]) == {"last_value", "last_seen", "never_reported"}
+    assert set(build_payload()["config"]) == {
+        "moisture_default",
+        "battery_suspect_days",
+        "include_devices",
+        "exclude_devices",
+        "notify_enabled",
+    }
