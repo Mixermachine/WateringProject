@@ -14,6 +14,13 @@ frontend/dist/
 *.tsbuildinfo
 
 # Test / e2e artifacts (build output in custom_components/**/www/ IS committed)
+tests/e2e/config/.storage/
+tests/e2e/config/home-assistant*.db*
+tests/e2e/config/.cloud/
+tests/e2e/config/.uuid
+tests/e2e/config/deps/
+tests/e2e/config/tts/
+tests/e2e/config/.auth/
 test-results/
 playwright-report/
 blob-report/

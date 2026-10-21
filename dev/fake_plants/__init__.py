@@ -14,6 +14,7 @@ registry requires one; it is mounted into ``custom_components/fake_plants`` by
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import Any
 
 import voluptuous as vol
@@ -22,6 +23,7 @@ from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,8 +33,11 @@ PLATFORM = "fake_plants"
 SERVICE_SET_VALUE = "set_value"
 SERVICE_SET_MOISTURE = "set_moisture"
 SERVICE_SET_BATTERY = "set_battery"
+SERVICE_AGE_BATTERY = "age_battery"
+SERVICE_RESET_NOTIFICATIONS = "reset_notifications"
 
 LAST_NOTIFICATION_ENTITY = "sensor.fake_last_notification"
+NOTIFICATION_COUNT_ENTITY = "sensor.fake_notification_count"
 NOTIFY_SERVICE = "fake_phone"
 
 MOISTURE_ATTRS: dict[str, Any] = {"device_class": "moisture", "unit_of_measurement": "%"}
@@ -107,6 +112,13 @@ SET_VALUE_SCHEMA = vol.Schema(
     }
 )
 
+AGE_BATTERY_SCHEMA = vol.Schema(
+    {
+        vol.Required("entity_id"): str,
+        vol.Required("days"): vol.Coerce(float),
+    }
+)
+
 
 def _entity_attributes(unique: str) -> dict[str, Any]:
     if unique.endswith("_battery"):
@@ -166,6 +178,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     state["entity_ids"] = entity_ids
     state.setdefault("notifications", [])
+    hass.states.async_set(
+        NOTIFICATION_COUNT_ENTITY, "0", {"friendly_name": "Fake notification count"}
+    )
 
     async def _set_value(call: ServiceCall) -> None:
         entity_id = call.data["entity_id"]
@@ -181,9 +196,45 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_register(DOMAIN, SERVICE_SET_MOISTURE, _set_moisture, SET_VALUE_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_SET_BATTERY, _set_battery, SET_VALUE_SCHEMA)
 
+    async def _age_battery(call: ServiceCall) -> None:
+        """Backdate a battery's zero clock on the Watering Project store.
+
+        A live container cannot wait 31 days, and a pre-seeded `.storage` file
+        would have to know the config entry id in advance. This dev-only shortcut
+        writes the same field the tracker would have written.
+        """
+        entity_id: str = call.data["entity_id"]
+        zero_since = (dt_util.utcnow() - timedelta(days=call.data["days"])).isoformat()
+        for entry in hass.config_entries.async_entries("watering_project"):
+            runtime = getattr(entry, "runtime_data", None)
+            coordinator = getattr(runtime, "coordinator", None)
+            if coordinator is None or entity_id not in coordinator.battery.records:
+                continue
+            coordinator.battery.records[entity_id]["zero_since"] = zero_since
+            await coordinator.async_evaluate()
+            return
+        _LOGGER.warning("age_battery: %s is not tracked yet", entity_id)
+
+    hass.services.async_register(DOMAIN, SERVICE_AGE_BATTERY, _age_battery, AGE_BATTERY_SCHEMA)
+    async def _reset_notifications(_call: ServiceCall) -> None:
+        state["notifications"].clear()
+        hass.states.async_set(
+            NOTIFICATION_COUNT_ENTITY, "0", {"friendly_name": "Fake notification count"}
+        )
+        hass.states.async_set(
+            LAST_NOTIFICATION_ENTITY, "", {"friendly_name": "Fake last notification"}
+        )
+
+    hass.services.async_register(DOMAIN, SERVICE_RESET_NOTIFICATIONS, _reset_notifications)
+
     async def _fake_phone(call: ServiceCall) -> None:
         record = dict(call.data)
         state["notifications"].append(record)
+        hass.states.async_set(
+            NOTIFICATION_COUNT_ENTITY,
+            str(len(state["notifications"])),
+            {"friendly_name": "Fake notification count"},
+        )
         hass.states.async_set(
             LAST_NOTIFICATION_ENTITY,
             record.get("message", ""),

@@ -22,6 +22,14 @@
     "set_battery": {
       "name": "Set battery",
       "description": "Alias of set_value for battery sensors."
+    },
+    "age_battery": {
+      "name": "Age battery clock",
+      "description": "Backdate a flat battery's zero_since in the Watering Project store."
+    },
+    "reset_notifications": {
+      "name": "Reset fake notifications",
+      "description": "Clear the recorded fake_phone calls and their sensor mirrors."
     }
   }
 }

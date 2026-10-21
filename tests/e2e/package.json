@@ -1,0 +1,17 @@
+{
+  "name": "watering-project-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Playwright end-to-end suite against a real Home Assistant container",
+  "license": "MIT",
+  "scripts": {
+    "test": "playwright test",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^26.6.5",
+    "typescript": "^5.9.3"
+  }
+}

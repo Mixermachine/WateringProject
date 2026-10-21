@@ -1,0 +1,16 @@
+# End-to-end harness: a real Home Assistant, the integration and the dev fake
+# hardware. Everything is mounted read-only except the config directory, which
+# Home Assistant owns at runtime.
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:2026.10.2
+    container_name: watering-project-e2e
+    restart: "no"
+    ports:
+      - "8123:8123"
+    environment:
+      TZ: UTC
+    volumes:
+      - ./config:/config
+      - ../../custom_components/watering_project:/config/custom_components/watering_project:ro
+      - ../../dev/fake_plants:/config/custom_components/fake_plants:ro

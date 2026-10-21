@@ -633,21 +633,34 @@ property), and this jsdom build hands out a `localStorage` without its prototype
 Real DOM for interaction and layout, no Docker. Deferred to M4, where Playwright already
 downloads a browser image.
 
-### L4 — end-to-end (Playwright against Docker HA) — 8 scenarios
+### L4 — end-to-end (Playwright against Docker HA) — implemented, 8 scenarios
 
-Harness: onboarding automation (`/api/onboarding/users` → `core_config` → `analytics` →
-`integration`), token via `auth/login_flow` + `/auth/token`,
-`localStorage["hassTokens"]` via `addInitScript`, component mounted, config entry created,
-**options set via the options flow** (`harness/options.ts`), resource registered before first
-page load, polling assertions.
+`cd tests/e2e && docker compose up -d && npx playwright test` — 8/8 green against
+`ghcr.io/home-assistant/home-assistant:2026.10.2`.
 
-`dev/fake_plants/` (dev-only; mounted into `custom_components/fake_plants` by the compose file)
-creates real registry entries via `er/dr.async_get_or_create` with `device_id` and areas,
-registers `notify.fake_phone` as a plain `hass.services.async_register("notify", "fake_phone",
-...)` before options are saved, and records the last message into
-`sensor.fake_last_notification`. Backdated battery ages come from a **pre-seeded**
-`.storage/watering_project.<entry_id>` file mounted into the container — a live container
-cannot fake 31 days.
+Harness (`harness/api.ts`): onboarding automation (`/api/onboarding/users` → `core_config` →
+`analytics` → `integration`), token via `/auth/token`, entries created through
+`/api/config/config_entries/flow`, **options set through the real options flow**
+(`POST /api/config/config_entries/options/flow` with the **entry id** as `handler`), and
+`localStorage["hassTokens"]` seeded via `addInitScript`. The dashboard is YAML
+(`config/ui-lovelace.yaml`) with the resource declared under `lovelace.resources` in
+`configuration.yaml`.
+
+`dev/fake_plants/` (dev-only; mounted into `custom_components/fake_plants`) creates real
+registry entries via `er/dr.async_get_or_create` with `device_id`, `suggested_area` and
+`config_entry_id`, registers `notify.fake_phone` as a plain
+`hass.services.async_register("notify", ...)`, mirrors the last message and a call counter into
+`sensor.fake_last_notification` / `sensor.fake_notification_count`, and exposes
+`set_value`/`set_moisture`/`set_battery`/`reset_notifications`.
+
+**Deviation from the original plan:** backdated battery ages come from the dev-only
+`fake_plants.age_battery` service (which writes `zero_since` on the Watering Project store and
+re-evaluates) instead of a pre-seeded `.storage/watering_project.<entry_id>` file. The entry id
+is created at runtime, so a static file would have to hard-code it; the service produces the
+same state without that coupling.
+
+Readiness probing uses `/auth/providers`, never `/api/*`: unauthenticated `/api/` hits return
+401 and Home Assistant bans the runner IP after a handful of them (observed, then fixed).
 
 Scenarios:
 1. Mount, resource present, card renders without console errors.
@@ -705,11 +718,13 @@ npx playwright test
 
 Lint/format: `ruff check` + `ruff format` (Python), `eslint` + `prettier` (TS), pre-commit.
 
-Status: 151 Python tests green in ~18 s on HA 2026.10.2 / Python 3.14 (classification,
+Status: 151 Python tests, 36 Vitest tests and 8 Playwright scenarios green on
+HA 2026.10.2 / Python 3.14 (classification,
 discovery, battery tracker, verdict history, evaluation pipeline, entities, config/options
 flow, version gate, notification matrix, websocket subscription, diagnostics, static card
-serving, fake-hardware round trip, golden fixture) plus 36 Vitest tests for the card
-(`cd frontend && npm test`).
+serving, fake-hardware round trip, golden fixture), 36 Vitest tests for the card
+(`cd frontend && npm test`) and 8 Playwright scenarios against a real container
+(`cd tests/e2e && docker compose up -d && npx playwright test`).
 
 ---
 
@@ -752,10 +767,10 @@ tests/
   test_golden.py
 docker/test.Dockerfile   # Linux test image (authoritative harness)
 tests/e2e/
-  docker-compose.yml, playwright.config.ts
-  harness/{onboarding,token,options,dashboard}.ts
-  fixtures/watering_project.storage.json
-  specs/*.spec.ts
+  docker-compose.yml, playwright.config.ts, package.json, tsconfig.json
+  config/{configuration.yaml,ui-lovelace.yaml}   # runtime state gitignored
+  harness/{api,state,global-setup}.ts
+  specs/watering-card.spec.ts                    # 8 scenarios
 dev/fake_plants/         # dev-only fake hardware, own config entry
   __init__.py            # devices/areas/entities + set_* services
   config_flow.py         # single-instance UI flow
@@ -817,7 +832,7 @@ step titles.
 3. **M3 — show**: card (sections, ordering, badges, collapse, states), Vitest + browser mode.
    Card and Vitest done (36 tests); browser mode moved next to Playwright in M4.
 4. **M4 — prove**: `dev/fake_plants` + notify stub (done, exercised in-process by
-   `tests/test_fake_hardware.py`), docker compose, onboarding/options
+   `tests/test_fake_hardware.py`), docker compose + Playwright (done, 8/8 scenarios)
    harness, pre-seeded storage fixture, all 8 Playwright scenarios.
 5. **M5 — package**: `hacs.json` (inactive), strings/translations, hassfest job, README install
    + upgrade instructions. Release workflow and HACS publication stay deferred.
@@ -866,9 +881,9 @@ Implemented:
   schema-mismatch/empty states), built to `custom_components/watering_project/www/` and
   served by the integration's static path.
 
-151 Python tests in the Linux image (HA 2026.10.2 / Python 3.14) + 36 Vitest tests.
-Fake hardware exists (`dev/fake_plants` + `notify.fake_phone`) and is covered in-process.
-Still missing: docker-compose/Playwright e2e and packaging.
+151 Python tests in the Linux image (HA 2026.10.2 / Python 3.14) + 36 Vitest tests + 8
+Playwright scenarios against a real Home Assistant container. Still missing: packaging
+(hassfest, install/upgrade docs).
 
 Assumed defaults unless revised: MIT license, `manifest.json` version `0.1.0`, plant label
 from device name, English only, single notify target, single config entry, no overwatering

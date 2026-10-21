@@ -49,3 +49,28 @@ set_battery:
       required: true
       selector:
         text:
+
+age_battery:
+  name: Age battery clock
+  description: Backdate a flat battery's zero_since in the Watering Project store.
+  fields:
+    entity_id:
+      name: Battery entity
+      required: true
+      example: sensor.monstera_battery
+      selector:
+        entity:
+          domain: sensor
+    days:
+      name: Days
+      description: How many days the battery has reported zero.
+      required: true
+      example: 31
+      selector:
+        number:
+          min: 0
+          max: 3650
+
+reset_notifications:
+  name: Reset fake notifications
+  description: Clear the recorded fake_phone calls and their sensor mirrors.
