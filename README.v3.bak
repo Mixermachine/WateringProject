@@ -1,0 +1,538 @@
+# Watering Project
+
+Home Assistant custom integration plus Lovelace card for plant moisture monitoring.
+
+Auto-discovers plant moisture sensors, groups them by room, and shows them in four
+urgency-ordered sections so it is obvious which plants need water right now.
+
+Motivation: existing moisture visualisations are either too generic or too noisy,
+because rechargeable-battery Zigbee sensors report `0%` battery for weeks before the
+reading is actually meaningful. Plant status must not be polluted by those false alarms.
+
+---
+
+## Goals
+
+- Zero-per-sensor-config discovery of plant moisture sensors.
+- Room-grouped, urgency-ordered view.
+- Battery quirks of rechargeable cells handled **reliably across HA restarts**.
+- Everything testable without real Zigbee hardware.
+
+## Non-goals (v1)
+
+- Irrigation control (valves, pumps, automations).
+- Historical charts / sparklines (Recorder queries).
+- Overwatering thresholds.
+- Per-plant threshold overrides in the UI (field is reserved in the payload; the
+  classification API already accepts an override map).
+- Websocket **subscriptions**. v1 uses request/response + a change event. `discover()` is
+  written transport-agnostically so a subscription can be added later without a rewrite.
+- Backfilling battery history from before installation.
+
+---
+
+## Architecture
+
+One repository, two deliverables with one clear cut line.
+
+| Part | Tech | Owns |
+| --- | --- | --- |
+| `custom_components/watering_project/` | Python, HA **2025.2+** | **Facts**: discovery, durable battery observation, config, static path + Lovelace resource |
+| `frontend/` | TypeScript + Lit, Vite build | **Rules and pixels**: classification, grouping, ordering, rendering |
+
+**Python is the single discovery authority.** Discovery is needed by the battery tracker,
+by the card, and by the options flow's auto-exclusion. Implementing it three times — two
+of them in different languages — creates predicates that drift. The only failure mode that
+matters: a plant **rendered** by the card but **not tracked** in Python has no staleness
+record, so a battery stuck at `0%` for six weeks renders as "Well watered". That silently
+inverts the entire purpose of the project.
+
+**Classification stays in TypeScript**, as a pure function. It is a per-render decision over
+facts plus live values; putting it in Python would make every UI rule change an integration
+release, would lag live values, and would turn 20 millisecond-scale tests into 20
+full-HA-instance tests.
+
+The Python side never sends a derived day count. It sends `zero_since`, and the card derives
+elapsed days at render time (see Classification).
+
+### Config transport
+
+Request/response command plus a change event. No subscriptions in v1.
+
+```
+{ "type": "watering_project/snapshot" }
+```
+
+```ts
+{
+  schema_version: 1,
+  revision: 42,                       // monotonic, for discarding out-of-order refetches
+  server_now: "2025-02-11T10:00:00+00:00",
+  config: {
+    moisture_default: 70,
+    battery_suspect_days: 30,
+    include_devices: [],
+    exclude_devices: []
+  },
+  plants: [{
+    plant_id: "<device_id>",          // fallback: moisture_entity_id
+    label: "Ficus",
+    area_id: "kitchen" | null,
+    area_name: "Kitchen" | null,
+    moisture_entity_id: "sensor.ficus_moisture",
+    battery_entity_id: "sensor.ficus_battery" | null,
+    temperature_entity_id: "sensor.ficus_temperature" | null,
+    threshold: null,                  // reserved for per-plant overrides
+    battery: {
+      zero_since: "2025-01-01T09:00:00+00:00" | null,
+      last_seen: "..." | null,
+      last_value: 0 | null,
+      never_reported: false
+    }
+  }],
+  excluded: [{ device_id: "...", label: "Basement leak", reason: "keyword:leak" }]
+}
+```
+
+- `schema_version` is mandatory. HACS version skew is routine (`?v=` cache-buster,
+  31-day static cache, cached companion-app JS), so "new integration + old card" and the
+  reverse both happen. The card declares `EXPECTED_SCHEMA` and renders an explicit mismatch
+  row instead of cascading `undefined`s.
+- `revision` lets the card drop a stale response that arrives after a newer one.
+- `server_now` exists so the card can correct for client clock skew when deriving elapsed
+  days.
+- `excluded[]` is part of the contract: it turns "why is my plant missing?" from a bug
+  report into an answer, and keeps the options flow's auto-exclusion honest.
+- The handler resolves the config entry at call time
+  (`hass.config_entries.async_entries(DOMAIN)`), never through a closure — `async_register_command`
+  silently overwrites handlers and has no unregister, so a closure would survive
+  `async_unload_entry` pointing at dead options.
+
+**Change notification.** The integration fires `watering_project_updated` only when:
+
+- the serialized payload hash changes (registry changes are debounced 1 s),
+- a tracked `zero_since` transitions null ↔ set,
+- `async_setup_entry` completes (so cards recover immediately after an options-triggered
+  reload).
+
+Never on ordinary state churn. `last_seen` updates must not be part of the change hash.
+
+The card refetches `watering_project/snapshot` on: mount, `watering_project_updated`,
+connection `ready` (covers HA restart and reconnect, where events were missed), and after an
+options change. If the command returns `not_loaded`, the card shows an error row with a
+retry button — it does **not** fall back to a degraded list, because without the payload it
+has no plants at all.
+
+---
+
+## Discovery (Python)
+
+`discovery.py::discover(hass, options) -> DiscoveryResult(plants, excluded)`, transport
+agnostic, unit-testable against real registries.
+
+Join: registry entities → device → area.
+
+- **Moisture entity**: domain `sensor`, `device_class == "moisture"` (from state attributes —
+  the bulk registry payload has no `device_class`), unit `%`, enabled.
+- **Battery**: same device, `device_class == "battery"`, unit `%`.
+- **Temperature**: same device, `device_class == "temperature"`, any unit.
+- **Area**: `entity.area_id` → else `device.area_id` → else `null` (`Unassigned` in the card).
+- **Label**: device name, else entity friendly name.
+- **`plant_id`**: `device_id`, fallback `moisture_entity_id` (device-less MQTT/template
+  sensors exist). Never a label — renames must not break collapse keys or future overrides.
+- Devices without a qualifying moisture entity are ignored.
+- Multiple qualifying moisture entities on one device: lowest `entity_id` among enabled ones;
+  logged once at debug.
+
+**No platform filter.** Zigbee is the intended source today, but matching on `device_class`
+keeps MQTT bridges usable and makes fake hardware possible.
+
+**Inclusion policy**, single implementation, applied on **every** discovery pass (not only
+first run — a leak sensor added next month must not become a plant):
+
+- `exclude_devices` wins over everything.
+- Empty `include_devices` means "all discovered devices".
+- Auto-exclude devices whose name/model match leak/flood/aquarium keywords. The keyword list
+  lives in `const.py` and has exactly one copy in the codebase. Auto-exclusions are
+  reported in `excluded[]` with `reason: "keyword:<kw>"` and are visible/overridable in the
+  options flow.
+
+**Per-connection permission filter (mandatory).** `hass.states` is filtered per user for
+non-admins, but registry list responses are not. Unless the snapshot filters, a restricted
+user gets records for entities they cannot read, which render as phantom `Unavailable` rows.
+The handler drops any record whose moisture entity fails
+`connection.user.permissions.check_entity(entity_id, POLICY_READ)`, and reports the count in
+`excluded[]` (`reason: "permission"`).
+
+**Known limitation (design-invariant, documented):** an entity with no state object at all
+carries no `device_class` in attributes, so it cannot be discovered. It is invisible rather
+than "Unavailable" in every possible design.
+
+---
+
+## Battery observation tracker (Python)
+
+`battery.py`, `helpers.storage.Store` (`.storage/watering_project.battery`), versioned schema,
+debounced writes (≥5 s), no write when nothing changed.
+
+Why not `last_changed`: `StateMachine.async_set_internal` sets
+`last_changed = old_state.last_changed if same_state else None`, and `hass.states` is rebuilt
+empty on every start, so a `now - last_changed` rule measures "time since last HA restart"
+and resets on every `0 → 100 → 0` charging blip or `"0"` vs `"0.0"` change. Exactly the
+sensors this project exists for.
+
+- Observed set is **device-based and independent of discovery**: every battery entity
+  (`device_class == "battery"`) on a non-excluded device, plus persisted records. Discovery
+  consumes the tracker; the tracker must never consume discovery — otherwise a moisture
+  entity blipping out for an hour drops the device's plant and silently restarts the clock.
+- Per-entity record: `zero_since`, `last_value`, `last_seen`.
+- Rules on each state change of a tracked entity:
+  - finite and `<= 1` → set `zero_since = now` if unset, update `last_value`/`last_seen`.
+  - finite and `> 1` → clear `zero_since`.
+  - out of range (`<0`, `>100`) or non-numeric → treat as unknown: do not touch `zero_since`,
+    update `last_seen`.
+  - `never_reported` is true until the first numeric value is seen (battery entities are
+    often `unknown` for hours after pairing). It is reported truthfully rather than
+    conflated with "no such entity".
+- Persisted `zero_since` loads before any state is known, so a sensor that stays at `0%`
+  keeps accumulating across restarts.
+- Records whose `last_seen` is older than 90 days are pruned.
+
+---
+
+## Classification (pure TypeScript)
+
+`classify(plants, values, snapshot, now) -> { suspect, unavailable, dry, healthy }`.
+Total function: no `hass`, no DOM, no I/O. First match wins:
+
+1. **Suspect battery** — `zero_days >= battery_suspect_days`.
+2. **Unavailable** — the **moisture** value is `unavailable`/`unknown`, missing, or not a
+   finite number. Battery/temperature degradation never moves a plant; it becomes a per-row
+   badge.
+3. **Too dry** — moisture `< effective_threshold` (`threshold ?? config.moisture_default`).
+4. **Well watered** — everything else, including overwatered plants.
+
+**Elapsed days are derived client-side**, never sent:
+
+```
+elapsedMs   = (Date.now() - receivedAt)                      // time since payload arrived
+serverNow   = Date.parse(snapshot.server_now) + elapsedMs    // skew-corrected
+zeroDays    = (serverNow - Date.parse(plant.battery.zero_since)) / 86_400_000
+```
+
+Pushing a precomputed `zero_days` would freeze at snapshot time: a 29-day sensor that
+crosses 30 while the dashboard is open would keep rendering "Well watered" until some
+unrelated refetch. Time must be evaluated at render time.
+
+**Numeric coercion is explicit**: accept number or numeric string, reject `null`, `""`,
+`"-"`, `NaN`, `Infinity`. `Number(undefined) < 70` is `false`, which would silently classify
+a stateless sensor as healthy; the `absent` branch exists to prevent exactly that.
+
+Battery display predicate: finite and `0 <= v <= 100`, else render as unknown.
+
+---
+
+## Card
+
+```yaml
+type: custom:watering-project-card
+title: Plants        # optional
+id: plants-main      # optional, enables collapse persistence
+```
+
+Registered in the card picker via `window.customCards.push({type, name, description})`;
+implements `getCardSize()` and `getGridOptions()`.
+
+Four sections, top to bottom:
+
+| # | Section | Behaviour |
+| --- | --- | --- |
+| 1 | Suspect battery (0% for > N days) | Collapsible, **hidden entirely** when empty |
+| 2 | Too dry (moisture < threshold) | Always shown |
+| 3 | Unavailable / unknown | Collapsible |
+| 4 | Well watered | **Collapsed by default** |
+
+- Within each section: rooms alphabetically, then moisture ascending inside a room;
+  `Unassigned` last.
+- Compact row: plant name + moisture %, plus a badge when temperature/battery is unknown.
+- Expanded row: temperature, battery %, **last reported** (`last_reported`, falling back to
+  `last_updated` — not `last_changed`, which is frozen for a healthy sensor that never
+  changes value), area.
+- Excluded-devices row: collapsed footer listing `excluded[]` with reasons (keyword,
+  option, permission), so missing plants are explainable.
+- **Values come from `hass.states`** for the entity ids in the payload. The payload supplies
+  structure; `hass.states` supplies live numbers. The card therefore fetches the payload
+  once per structural change and stays live with zero extra traffic.
+- **Update model**: HA assigns `hass` on every state change in the system. The `hass` setter
+  computes a memo signature — payload `revision` + (each relevant entity id → `state` +
+  `last_reported`) + `Math.floor(now / 60000)` — and early-returns when unchanged. The time
+  bucket is required, otherwise a day-boundary crossing never repaints.
+- Per-card payload cache keyed by `revision` so N cards on a dashboard do not multiply
+  refetches.
+- States: loading (payload not yet received), `not_loaded` (error row + retry),
+  schema mismatch (explicit row), empty (nothing discovered, pointer to options).
+- Collapse state: `localStorage["watering-project:" + (id || "default") + ":collapsed"]`,
+  wrapped in try/catch (webviews/private mode throw); no persistence when `id` is absent.
+- Theming: HA CSS variables only. Sections expose `aria-expanded` and are keyboard operable.
+
+### Registration lifecycle (the three crash sites)
+
+- **Static path** — registered once in `async_setup` via
+  `async_register_static_paths([StaticPathConfig(...)])` (2024.7+ API), guarded by a
+  `hass.data` flag. Per-entry registration raises on the duplicate aiohttp route after the
+  first reload.
+- **Lovelace resource** — in `async_setup_entry`, only when `hass.data.get("lovelace")`
+  exists and `resource_mode == "storage"` (attribute exists since 2025.2). List
+  `async_items()`, match on URL with the query stripped: `async_update_item` when present,
+  `async_create_item` only when absent. Blind creates append a duplicate every restart, and
+  the second module evaluation throws `NotSupportedError` at `customElements.define`.
+- **YAML mode** — `ResourceYAMLCollection` has no `async_create_item`; branch on
+  `resource_mode == "yaml"` before touching `.resources` and log a one-time warning with the
+  snippet to paste:
+
+```yaml
+lovelace:
+  resources:
+    - url: /watering_project/watering-project-card.js?v=0.1.0
+      type: module
+```
+
+- Serve JS with `cache_headers=False`. Defaults send `max-age=2678400` (31 days), which would
+  pin a YAML-mode user to a stale card, and the companion-app webview caches JS hard — `?v=`
+  is load-bearing.
+- `manifest.json`: `"homeassistant": "2025.2.0"`, `"dependencies": ["http", "websocket_api"]`.
+
+---
+
+## Configuration
+
+Options flow (saving reloads the entry; the card re-fetches because `async_setup_entry` fires
+the update event):
+
+| Option | Default | Range | Meaning |
+| --- | --- | --- | --- |
+| Moisture default threshold | `70` % | 1–100 | Below this a plant is "too dry". Real sensors read ~70% on quite dry soil, so this is tuning-dependent |
+| Battery suspect duration | `30` days | 1–365 | How long `0%` must persist to be suspect |
+| Include devices | `[]` (all) | `DeviceSelector(multiple=True)` | Restrict discovery |
+| Exclude devices | `[]` | `DeviceSelector(multiple=True)` | Always excluded, wins over include |
+
+Device ids are validated against the device registry on save; unknown/removed ids warn
+instead of failing. Flow strings in `strings.json` + `translations/en.json`. Card strings are
+hardcoded English in v1, stated explicitly.
+
+---
+
+## Testing
+
+Testing is a hard requirement and must not depend on real Zigbee hardware. Six layers.
+
+### L1 — pure logic (Vitest, no HA, no DOM)
+
+Classification, derivation, sorting, filtering, with injected `now`:
+- `zero_days` derivation from `zero_since` + `server_now` + elapsed; skew correction with a
+  deliberately wrong client clock.
+- Suspect boundary at exactly 29 vs 31 days against a 30-day limit.
+- Absent state, `null`, `""`, `"-"`, `"45.0"` (string state — real for MQTT/template),
+  `NaN`, `Infinity`.
+- Battery `-1`, `255`, `0.4`, `0`, `100`, `101`, `null`; `never_reported`.
+- Moisture exactly at threshold; overwatered → "well watered"; unknown temperature/battery
+  never moves a plant; `threshold` override wins over `moisture_default`.
+- Room ordering, moisture ordering, `Unassigned` last.
+
+### L2 — HA in-process (`pytest-homeassistant-custom-component`)
+
+Real HA core, real registries, real config entries. **All discovery testing lives here.**
+- Discovery: seed registry entries (`er.async_get_or_create`, `dr.async_get_or_create`, areas)
+  and state attributes, then assert the plant list: predicate, sibling selection, tie-break,
+  area precedence (entity → device → None), label fallback, `plant_id` stability across a
+  rename.
+- Inclusion: keyword auto-exclude (single copy of the list), include/exclude precedence,
+  applied on every pass, reported in `excluded[]` with reasons.
+- Permissions: **restricted** non-admin user sees only readable plants, with
+  `reason: "permission"` entries.
+- Tracker: `0%` sets `zero_since`; `>1%` clears; out-of-range leaves it untouched;
+  `never_reported` until first value; Store round-trip across a simulated restart; 90-day
+  pruning; independence from discovery (remove the moisture entity, assert the battery clock
+  survives).
+- Websocket: payload shape + `schema_version`, `revision` monotonic, `not_loaded` when
+  unloaded, no stale config after options reload (proves no closure capture), non-admin
+  access works.
+- Events: fired on registry change (debounced) and `zero_since` transition; **not** fired on
+  unrelated state churn or `last_seen`-only updates.
+- Registration: resource created once; restart adds no duplicate; version bump updates in
+  place; entry reload does not double-register the static path; YAML mode warns and does not
+  raise; `hass.data["lovelace"]` absent handled.
+- **Golden fixture**: `test_discovery.py::test_golden` writes
+  `frontend/test/fixtures/plants.golden.json` (`--update-golden`), committed, diffed in CI.
+
+### L3 — card unit tests (Vitest + jsdom)
+
+Consumes the golden fixture — no hand-built fake registries.
+Rendering, section assignment, collapse `localStorage` round-trip with and without `id`,
+expanded rows, `watering_project_updated` re-fetch, `ready` re-fetch, revision-ordering,
+`not_loaded` retry, schema mismatch row, excluded footer, empty state.
+Budget tests: **1000 unrelated state updates produce zero re-renders**, **200-sensor render
+stays within budget**, **a day-boundary crossing repaints** (time bucket in the signature).
+
+### L3b — Vitest browser mode
+
+Real DOM for interaction/layout assertions. No Docker, milliseconds per case.
+
+### L4 — end-to-end (Playwright against Docker HA) — full 7 scenarios
+
+Harness, part of the milestone:
+- onboarding automation (`/api/onboarding/users` → `core_config` → `analytics` →
+  `integration`), token via `auth/login_flow` + `/auth/token`, `localStorage["hassTokens"]`
+  injected via `addInitScript` before first navigation;
+- component mounted in `/config/custom_components`, config entry created via
+  `config_entries/flow`;
+- the asset registered **before the first page load** (static path + resource registration
+  happen during setup), otherwise scenario 1 flakes with "Custom element doesn't exist";
+- polling assertions, because the custom-element transient is normal while the module import
+  resolves. The card's explicit loading row removes most of this flake class.
+
+`dev/fake_plants/` (dev-only, excluded from releases) must create real registry entries via
+`er/dr.async_get_or_create` with `device_id` and area assignment — `hass.states.async_set`
+alone creates no device and no area, and discovery joins through the registry. It exposes
+services to set values, push live updates, set a battery state with a backdated timestamp, and
+add a leak-style device (moisture only, no battery/temperature).
+
+Scenarios:
+
+1. Component mounts, resource auto-registers, card renders without console errors.
+2. Four sections appear with correct membership from seeded fake plants.
+3. Section 1 hidden with no suspect sensors; appears after a backdated `0%` battery.
+4. Plant moves from "too dry" to "well watered" when moisture is raised live.
+5. Collapse/expand behaves; state survives page reload (with `id`).
+6. Rooms alphabetical, `Unassigned` last.
+7. Device excluded in options disappears after reload and appears in the excluded footer.
+
+### L5 — acceptance (manual, real hardware)
+
+HACS install on the real instance; confirm actual ZHA sensors appear and the 0%-battery quirk
+is filtered. Includes a 10-minute soak: restart HA, confirm a plant already at `0%` keeps its
+accumulated `zero_since`.
+
+### CI (GitHub Actions)
+
+- **Job A (min)**: pinned HA 2025.2 + `requirements_test_min.txt` + its required Python.
+  Permanent merge blocker.
+- **Job B (latest)**: `requirements_test_latest.txt`, nightly, `continue-on-error: true`,
+  failure opens a bump PR. `pytest-homeassistant-custom-component` pins one exact
+  `homeassistant` and one exact `pytest` per release, so the legs cannot share a file.
+- **Job C**: `vitest` (jsdom + browser mode) + `vite build`; fails if the golden fixture is
+  stale.
+- **Job D**: docker compose + Playwright, screenshots/traces uploaded on failure.
+- **Job E**: `hassfest` + HACS validation.
+
+---
+
+## Development
+
+```bash
+# card
+cd frontend && npm install && npm run build   # emits custom_components/watering_project/www/
+cd frontend && npm test
+
+# integration
+python -m venv .venv && . .venv/bin/activate
+pip install -r requirements_test_min.txt
+pytest -q
+
+# regenerate the contract fixture consumed by Vitest
+pytest -q tests/test_discovery.py --update-golden
+
+# e2e (needs docker)
+cd tests/e2e && docker compose up -d --build
+npx playwright test
+```
+
+Lint/format: `ruff` (Python), `eslint` + `prettier` (TS), enforced by pre-commit.
+
+---
+
+## Repository layout
+
+```
+custom_components/watering_project/
+  __init__.py            # async_setup (static path, WS command), async_setup_entry,
+                         # resource registration, unload
+  discovery.py           # single discovery authority
+  battery.py             # Store-backed observation tracker (independent of discovery)
+  config_flow.py
+  const.py               # DOMAIN, defaults, leak keyword list, schema version
+  websocket_api.py       # watering_project/snapshot + permission filtering
+  frontend.py            # resource registration + YAML-mode warning
+  manifest.json
+  strings.json, translations/en.json
+  www/watering-project-card.js   # committed build output
+frontend/
+  src/watering-project-card.ts
+  src/classify.ts
+  src/derive.ts          # zero_days + skew correction
+  src/types.ts           # payload schema, EXPECTED_SCHEMA
+  test/fixtures/plants.golden.json   # generated by pytest, consumed here
+  package.json, vite.config.ts, tsconfig.json
+tests/
+  conftest.py, test_discovery.py, test_battery.py, test_config_flow.py,
+  test_websocket.py, test_frontend.py
+tests/e2e/
+  docker-compose.yml, playwright.config.ts, harness/{onboarding,token,dashboard}.ts
+  specs/*.spec.ts
+dev/fake_plants/         # dev-only fake sensor hardware, excluded from release
+.github/workflows/
+  tests.yml, e2e.yml, hassfest.yml
+hacs.json
+requirements_test_min.txt, requirements_test_latest.txt
+```
+
+---
+
+## Known limitations
+
+1. **No backfill.** The battery clock starts at installation; a sensor already stuck at `0%`
+   for months is flagged only after `battery_suspect_days` from install.
+2. **Entities with no state object are invisible**, because `device_class` lives in state
+   attributes. Design-invariant.
+3. **Restricted non-admin users** only see plants whose moisture entity they may read;
+   filtered records appear in `excluded[]` as `reason: "permission"`.
+4. **No fallback discovery in the card.** A backend bug renders an error row, not a degraded
+   plant list — by design, so failure is loud.
+5. **`last_changed` is not used for staleness anywhere.**
+6. **English only** in v1; card strings hardcoded.
+7. **"0%" is a heuristic**: `<= 1%` counts as zero, out-of-range values are treated as
+   unknown.
+
+---
+
+## Milestones
+
+1. **M1 — discovery + tracker**: `discovery.py`, `battery.py`, pytest suites for both, golden
+   fixture generation.
+2. **M2 — integration surface**: config/options flow, `websocket_api.py` snapshot with
+   permission filtering, event plumbing with debounce, static path + resource lifecycle.
+3. **M3 — card**: `derive.ts`, `classify.ts`, rendering, update signature, collapse, picker
+   registration, L1 + L3 + L3b.
+4. **M4 — fake hardware + e2e**: `dev/fake_plants`, docker compose, onboarding harness, all 7
+   Playwright scenarios.
+5. **M5 — packaging**: `hacs.json`, translations, hassfest/HACS jobs, release workflow.
+
+## Definition of done (v1)
+
+- A plant whose `zero_since` exceeds the limit **never** renders "Well watered", proven by a
+  pytest + L1 pair sharing the golden fixture.
+- 29-vs-31-day boundary proven in L1 with injected `now`; restart survival proven in L2 and
+  the manual soak.
+- No duplicate Lovelace resource after two consecutive restarts.
+- No hardcoded colors, keyboard operable, zero console errors, zero re-renders on unrelated
+  state churn.
+- CI green on all five jobs; HACS + hassfest validation passing.
+
+---
+
+## Status
+
+Specification complete, implementation not started.
+
+Assumed defaults unless revised: MIT license, `manifest.json` version `0.1.0`, plant label
+from device name, English only, no overwatering threshold, no subscription transport.
