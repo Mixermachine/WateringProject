@@ -7,6 +7,11 @@ from typing import Final
 
 DOMAIN: Final = "watering_project"
 
+#: Supported floor. There is deliberately no older compat shim: the floor is the
+#: release the maintainer runs and CI tests. Bump it with the dependency pin in
+#: requirements_test.txt, not separately.
+MIN_HOMEASSISTANT_VERSION: Final = "2026.10.0"
+
 # --- Schema / storage -------------------------------------------------------
 
 SCHEMA_VERSION: Final = 1

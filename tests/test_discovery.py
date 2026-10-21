@@ -56,6 +56,7 @@ def add_entity(
         suggested_object_id=object_id,
         device_id=device_id,
         disabled_by=er.RegistryEntryDisabler.USER if disabled else None,
+        original_name=friendly_name or object_id,
     )
     if area_id is not None:
         registry.async_update_entity(entry.entity_id, area_id=area_id)

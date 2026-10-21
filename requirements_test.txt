@@ -1,0 +1,5 @@
+# Single test leg: the supported floor is the newest Home Assistant, which is also
+# what the maintainer runs. pytest-homeassistant-custom-component pins exactly one
+# homeassistant release per version, so this file must stay pinned to one package
+# version (0.13.373 -> homeassistant==2026.10.2, requires Python >= 3.14).
+pytest-homeassistant-custom-component==0.13.373

@@ -40,7 +40,7 @@ actually meaningful. Plant status must not be polluted by those false alarms.
 
 | Part | Tech | Owns |
 | --- | --- | --- |
-| `custom_components/watering_project/` | Python, HA **2025.2+** | **Everything that decides**: discovery, battery observation, classification, entities, notifications, config |
+| `custom_components/watering_project/` | Python, HA **2026.10+** | **Everything that decides**: discovery, battery observation, classification, entities, notifications, config |
 | `frontend/` | TypeScript + Lit, Vite build | **Everything that shows**: sections, ordering, badges, collapse, layout |
 
 The verdict is computed **only** on the server, where it becomes first-class HA state
@@ -449,7 +449,10 @@ lovelace:
 
 - Documented consequence: after an upgrade the user must bump `?v=` manually, otherwise the
   cached card persists (companion-app webviews cache JS aggressively).
-- `manifest.json`: `"homeassistant": "2025.2.0"`, `"dependencies": ["http", "websocket_api"]`,
+- `hacs.json` declares the supported floor `2026.10.0`, and `async_setup_entry` enforces it at
+  runtime by raising `ConfigEntryError` with a readable message. The manifest schema has no
+  minimum-version key, so the floor is not duplicated there.
+- `manifest.json`: `"dependencies": ["http", "websocket_api"]`,
   `"documentation": "https://github.com/Mixermachine/WateringProject#readme"`,
   `"issue_tracker": "https://github.com/Mixermachine/WateringProject/issues"`,
   `"iot_class": "local_polling"`, `"integration_type": "hub"`.
@@ -591,12 +594,16 @@ Hard requirement: no real Zigbee hardware, no phone. Six layers.
 
 ### Harness constraints
 
-The suite is authoritative on **Linux**: `pytest-homeassistant-custom-component==0.13.215`
-(which pins `homeassistant==2025.2.5`, Python ≥ 3.13) blocks sockets except AF_UNIX, and
-`aiodns` refuses the Proactor loop Windows forces on Home Assistant. Run it via
-`docker/test.Dockerfile` locally. Windows-native runs work for quick iteration because
-`tests/conftest.py` neutralises those two harness behaviours, but they are not the reference
-environment.
+There is exactly **one test leg**: `requirements_test.txt` pins
+`pytest-homeassistant-custom-component==0.13.373`, which in turn pins
+`homeassistant==2026.10.2` and requires **Python ≥ 3.14**. The supported floor is therefore the
+release the maintainer runs and CI tests — no compatibility shim for older Home Assistant
+releases.
+
+Run it via `docker/test.Dockerfile` (`python:3.14-slim`). The harness is Linux-only in two
+respects: it blocks sockets except AF_UNIX, and `aiodns` refuses the Proactor loop Windows
+forces on Home Assistant. A native Windows venv on Python 3.13 can no longer run the suite, by
+design; that is the cost of the single-leg floor.
 
 ### L3 — card (Vitest + jsdom, golden fixture)
 
@@ -645,14 +652,13 @@ restart with a plant at `0%` keeps `zero_days`; 10-minute soak.
 
 ### CI (GitHub Actions)
 
-- **Job A (min)**: pinned HA 2025.2 + `requirements_test_min.txt`; runs pytest **including the
-  golden staleness check** (`--update-golden` then `git diff --exit-code`). Merge blocker.
-- **Job B (latest)**: `requirements_test_latest.txt`, nightly, `continue-on-error: true`,
-  failure opens a bump PR.
-- **Job C**: `vitest` (jsdom + browser mode) + `vite build`.
-- **Job D**: docker compose + Playwright, artifacts on failure.
-- **Job E**: `hassfest` from day one (validates manifest, strings, translations we rely on). HACS
+- **Job A**: pytest on `requirements_test.txt` (HA 2026.10.2) **including the golden staleness
+  check** (`--update-golden` then `git diff --exit-code`). Merge blocker.
+- **Job B**: `vitest` (jsdom + browser mode) + `vite build`.
+- **Job C**: docker compose + Playwright, artifacts on failure.
+- **Job D**: `hassfest` (validates manifest, strings and translations we rely on). HACS
   validation is enabled once the repository becomes public.
+- Dependency bumps are deliberate commits that raise the floor, never a nightly job.
 
 ---
 
@@ -669,10 +675,6 @@ docker run --rm -v "$PWD":/work -w /work watering-project-tests pytest -q
 MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W):/work" -w /work watering-project-tests \
   sh -c 'pytest tests/test_golden.py --update-golden -q && git diff --exit-code -- frontend/test/fixtures'
 
-# native Windows quick loop (same suite; harness quirks neutralised in conftest.py)
-python -m venv .venv && .venv/Scripts/python.exe -m pip install -r requirements_test_min.txt
-.venv/Scripts/python.exe -m pytest -q
-
 # regenerate the contract fixture consumed by Vitest
 pytest -q tests/test_golden.py --update-golden
 
@@ -687,8 +689,9 @@ npx playwright test
 
 Lint/format: `ruff check` + `ruff format` (Python), `eslint` + `prettier` (TS), pre-commit.
 
-M1 status: 84 tests green in ~1.5 s (classification, discovery, battery tracker, verdict
-history, golden fixture).
+Status: 118 tests green in ~9 s on HA 2026.10.2 / Python 3.14 (classification, discovery,
+battery tracker, verdict history, evaluation pipeline, entities, config/options flow, version
+gate, golden fixture).
 
 ---
 
@@ -734,9 +737,9 @@ tests/e2e/
 dev/fake_plants/         # dev-only fake hardware + notify.fake_phone
 .github/workflows/
   tests.yml, e2e.yml, hassfest.yml
-hacs.json                # publish-ready, inactive (no HACS install in v1)
+hacs.json                # name + HA floor; publish-ready, no HACS install in v1
 LICENSE                  # MIT
-requirements_test_min.txt, requirements_test_latest.txt
+requirements_test.txt
 ```
 
 `strings.json` keys are load-bearing: `entity.binary_sensor.needs_water.name`,
@@ -776,13 +779,12 @@ step titles.
 0. **M0 — repo**: local git, private remote, `.gitignore` covering Python/Node/e2e artifacts
    while committing the card build output. **Done.**
 1. **M1 — decide**: `discovery.py`, `battery.py`, `verdicts.py`, `store.py`,
-   `classification.py`, pytest + golden fixture. **Done — 84 tests green.**
+   `classification.py`, pytest + golden fixture. **Done.**
 2. **M2 — expose** (split):
    - **M2a — pipeline + entities + config**: `evaluate.py` (single-flight, debounced state and
      registry triggers, 60 s timer with skip guard, teardown), `binary_sensor.py`,
      `sensor.py`, `config_flow.py` (single instance + options flow with validation and
-     `notify.` normalisation), `strings.json` / `translations/en.json`. **Done — 114 tests
-     green.**
+     `notify.` normalisation), `strings.json` / `translations/en.json`. **Done.**
    - **M2b — notifications + transport**: notification decision (confirmed recovery + hard
      floor, write-ahead state), repair issues, `watering_project/subscribe` with
      per-connection permission filtering, payload builder + signature, static path.
@@ -828,8 +830,12 @@ Implemented:
   options flow with device selectors and notify validation), `strings.json` +
   `translations/en.json`.
 
-114 tests green natively and in the Linux test image. Still missing: notifications, repair
-issues, `watering_project/subscribe`, the card, fake hardware and e2e.
+118 tests green in the Linux image (HA 2026.10.2 / Python 3.14). Still missing: notifications,
+repair issues, `watering_project/subscribe`, the card, fake hardware and e2e.
+
+Version policy: `manifest.json` stays at `0.1.0` until the first real install at M4, which is
+tagged and paired with `?v=` on the Lovelace resource. The supported Home Assistant floor is
+`2026.10.0`, declared in `hacs.json` and enforced at runtime.
 
 
 Assumed defaults unless revised: MIT license, `manifest.json` version `0.1.0`, plant label

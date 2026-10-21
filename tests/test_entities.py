@@ -27,7 +27,9 @@ async def test_dry_plant_entities(hass: HomeAssistant, enable_custom_integration
     assert needs_water.state == "on"
     assert status is not None
     assert status.state == "dry"
-    assert plant["device_id"] in {device.id for device in dr.async_get(hass).devices.values()}
+    device_id = plant["device_id"]
+    assert device_id is not None
+    assert dr.async_get(hass).async_get(device_id) is not None
 
 
 async def test_healthy_plant_entities(hass: HomeAssistant, enable_custom_integrations) -> None:

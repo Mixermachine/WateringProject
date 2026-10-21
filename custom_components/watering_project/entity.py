@@ -55,7 +55,7 @@ class WateringPlantEntity(Entity):
         self.entity_key = entity_key
 
         hass = coordinator.hass
-        device = dr.async_get(hass).devices.get(plant_id)
+        device = dr.async_get(hass).async_get(plant_id)
         self._device_exists = device is not None
         self._device_identifiers = set(device.identifiers) if device is not None else None
 

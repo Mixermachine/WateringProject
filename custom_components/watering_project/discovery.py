@@ -187,7 +187,7 @@ def discover(
         moisture = _lowest_entity_id(moisture_candidates)
         assert moisture is not None  # narrowed by the check above
 
-        device = devices.devices.get(device_id) if device_id else None
+        device = devices.async_get(device_id) if device_id else None
         label = _device_label(device, moisture)
 
         area_id = moisture.area_id or (device.area_id if device is not None else None)

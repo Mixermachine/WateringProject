@@ -10,11 +10,14 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Final
 
+from awesomeversion import AwesomeVersion
 from homeassistant.const import Platform
+from homeassistant.const import __version__ as HA_VERSION
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryError
 
 from .battery import BatteryTracker
-from .const import DOMAIN
+from .const import DOMAIN, MIN_HOMEASSISTANT_VERSION
 from .evaluate import WateringCoordinator, WateringRuntime
 from .store import WateringStore
 from .verdicts import VerdictHistory
@@ -27,6 +30,14 @@ _LOGGER: Final = logging.getLogger(__name__)
 PLATFORMS: Final[tuple[Platform, ...]] = (Platform.BINARY_SENSOR, Platform.SENSOR)
 
 
+def homeassistant_version_supported(version: str) -> bool:
+    """Whether the running Home Assistant meets the supported floor."""
+    try:
+        return AwesomeVersion(version) >= AwesomeVersion(MIN_HOMEASSISTANT_VERSION)
+    except Exception:
+        return False
+
+
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     """Set up the integration (no YAML configuration in v1)."""
     hass.data.setdefault(DOMAIN, {})
@@ -35,6 +46,12 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up one config entry: load state, evaluate, start triggers."""
+    if not homeassistant_version_supported(HA_VERSION):
+        raise ConfigEntryError(
+            f"Watering Project requires Home Assistant {MIN_HOMEASSISTANT_VERSION} "
+            f"or newer (running {HA_VERSION})"
+        )
+
     store = WateringStore(hass, entry.entry_id)
     await store.async_load()
 
