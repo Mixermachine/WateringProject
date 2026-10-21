@@ -62,7 +62,7 @@ async function formRequest<T>(path: string, body: Record<string, string>): Promi
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
-export async function waitForHomeAssistant(timeoutMs = 240_000): Promise<void> {
+export async function waitForHomeAssistant(timeoutMs = 600_000): Promise<void> {
   // `/auth/providers` is unauthenticated and only answers once auth is up.
   // Never probe `/api/*` here: repeated 401s get the runner IP banned.
   const deadline = Date.now() + timeoutMs;

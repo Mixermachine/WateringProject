@@ -1,0 +1,7 @@
+views:
+  - title: Plants
+    path: plants
+    cards:
+      - type: custom:watering-project-card
+        id: plants-main
+        title: Plants

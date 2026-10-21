@@ -24,6 +24,10 @@ tests/e2e/config/.uuid
 tests/e2e/config/deps/
 tests/e2e/config/tts/
 tests/e2e/config/.auth/
+tests/e2e/config/blueprints/
+tests/e2e/config/custom_components/
+tests/e2e/config/*.log*
+tests/e2e/config/*.db*
 test-results/
 playwright-report/
 blob-report/
@@ -39,5 +43,8 @@ Thumbs.db
 .vscode/
 *.swp
 
-# Local HA sandbox
-config/
+# Local HA sandbox (root only: tests/e2e/config is committed)
+/config/
+tests/e2e/config/.HA_VERSION
+tests/e2e/config/.ha_run.lock
+tests/e2e/config/.uuid

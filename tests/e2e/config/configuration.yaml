@@ -1,0 +1,15 @@
+# Committed skeleton. Home Assistant writes .storage/ and a database next to it;
+# both are gitignored.
+default_config:
+
+lovelace:
+  mode: yaml
+  resources:
+    - url: /watering_project/watering-project-card.js?v=0.1.0
+      type: module
+
+logger:
+  default: warning
+  logs:
+    custom_components.watering_project: debug
+    custom_components.fake_plants: debug
