@@ -1,8 +1,8 @@
 """Watering Project integration.
 
-M2a: evaluation pipeline, entities and config/options flow. Notifications and
-the websocket subscription are M2b; the pipeline already records the payload
-signature they will use.
+Server-side authority for plant status: discovery, battery clock, classification,
+entities, notification decisions, the payload contract and its websocket
+subscription. The Lovelace card only presents what this code decided.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from homeassistant.const import Platform
 from homeassistant.const import __version__ as HA_VERSION
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
+from homeassistant.helpers import config_validation as cv
 
 from . import websocket_api
 from .battery import BatteryTracker
@@ -30,6 +31,9 @@ if TYPE_CHECKING:
 _LOGGER: Final = logging.getLogger(__name__)
 
 PLATFORMS: Final[tuple[Platform, ...]] = (Platform.BINARY_SENSOR, Platform.SENSOR)
+
+# Configured only through a config entry; a YAML block is a mistake, not a feature.
+CONFIG_SCHEMA: Final = cv.config_entry_only_config_schema(DOMAIN)
 
 
 def homeassistant_version_supported(version: str) -> bool:

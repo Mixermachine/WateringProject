@@ -454,6 +454,8 @@ lovelace:
 
 - Documented consequence: after an upgrade the user must bump `?v=` manually, otherwise the
   cached card persists (companion-app webviews cache JS aggressively).
+- `__init__.py` defines `CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)` because
+  `async_setup` exists; hassfest rejects an integration with `async_setup` and no schema.
 - `hacs.json` declares the supported floor `2026.10.0`, and `async_setup_entry` enforces it at
   runtime by raising `ConfigEntryError` with a readable message. The manifest schema has no
   minimum-version key, so the floor is not duplicated there.
@@ -681,12 +683,17 @@ restart with a plant at `0%` keeps `zero_days`; 10-minute soak.
 
 ### CI (GitHub Actions)
 
-- **Job A**: pytest on `requirements_test.txt` (HA 2026.10.2) **including the golden staleness
-  check** (`--update-golden` then `git diff --exit-code`). Merge blocker.
-- **Job B**: `vitest` (jsdom + browser mode) + `vite build`.
-- **Job C**: docker compose + Playwright, artifacts on failure.
-- **Job D**: `hassfest` (validates manifest, strings and translations we rely on). HACS
-  validation is enabled once the repository becomes public.
+`.github/workflows/` — all jobs are merge blockers:
+
+- `tests.yml` → **pytest** job: builds `docker/test.Dockerfile` and runs the suite inside it
+  (golden fixture is compared, not regenerated), then `ruff check` + `ruff format --check`.
+  **card** job: `npm ci`, `tsc --noEmit`, `vitest run`, then `vite build` and
+  `git diff --exit-code custom_components/watering_project/www` so a stale committed bundle
+  fails the build.
+- `e2e.yml` → `npm ci`, Playwright chromium, `docker compose up -d`, 8 scenarios; container
+  logs and `test-results/` are uploaded on failure and the stack is torn down with `-v`.
+- `hassfest.yml` → manifest, strings and translations. HACS validation is enabled once the
+  repository becomes public.
 - Dependency bumps are deliberate commits that raise the floor, never a nightly job.
 
 ---
@@ -834,8 +841,9 @@ step titles.
 4. **M4 — prove**: `dev/fake_plants` + notify stub (done, exercised in-process by
    `tests/test_fake_hardware.py`), docker compose + Playwright (done, 8/8 scenarios)
    harness, pre-seeded storage fixture, all 8 Playwright scenarios.
-5. **M5 — package**: `hacs.json` (inactive), strings/translations, hassfest job, README install
-   + upgrade instructions. Release workflow and HACS publication stay deferred.
+5. **M5 — package**: `hacs.json` (inactive), strings/translations, three CI workflows
+   (`tests`, `e2e`, `hassfest`), README install + upgrade instructions. `hassfest` clean.
+   Tagged `v0.1.0`. Release workflow and HACS publication stay deferred.
 
 ## Definition of done (v1)
 
@@ -860,7 +868,7 @@ MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Aaron Dietz.
 
 ## Status
 
-M0–M3 implemented. M4–M5 pending (fake hardware, e2e, packaging). Repository:
+M0–M5 implemented: v1 is feature-complete and tagged `v0.1.0`. Repository:
 <https://github.com/Mixermachine/WateringProject> (private, branch `main`).
 
 Implemented:
@@ -880,10 +888,14 @@ Implemented:
   expand, badges, excluded footer, collapse persistence, loading/`not_loaded`/
   schema-mismatch/empty states), built to `custom_components/watering_project/www/` and
   served by the integration's static path.
+- **M4** — `dev/fake_plants` + `notify.fake_phone`, docker-compose Home Assistant 2026.10.2,
+  Playwright harness (API onboarding, config/options flows, token seeding) with the 8
+  scenarios from L4.
+- **M5** — CI (`tests`, `e2e`, `hassfest`), hassfest clean, install/upgrade docs, tag `v0.1.0`.
 
 151 Python tests in the Linux image (HA 2026.10.2 / Python 3.14) + 36 Vitest tests + 8
-Playwright scenarios against a real Home Assistant container. Still missing: packaging
-(hassfest, install/upgrade docs).
+Playwright scenarios against a real Home Assistant container. `hassfest` reports zero invalid
+integrations. Tags: `v0.1.0`.
 
 Assumed defaults unless revised: MIT license, `manifest.json` version `0.1.0`, plant label
 from device name, English only, single notify target, single config entry, no overwatering
