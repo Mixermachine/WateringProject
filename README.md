@@ -556,6 +556,11 @@ Hard requirement: no real Zigbee hardware, no phone. Six layers.
 
 ### L2 — HA in-process (`pytest-homeassistant-custom-component`)
 
+`tests/test_fake_hardware.py` already runs the whole chain in-process: it loads
+`dev/fake_plants` (bypassing the loader, since the dev integration is not installed),
+creates its registry entries and `notify.fake_phone`, sets up a real config entry, and
+asserts discovery → verdicts → repair issues → one notification per drought.
+
 - Discovery: records, predicate, enabled-only siblings, tie-break, area precedence, label
   fallback (`name is None`), `plant_id` stability across rename; inclusion precedence
   (`exclude > include > keyword > default`) and all `reason` values; restricted non-admin
@@ -700,10 +705,11 @@ npx playwright test
 
 Lint/format: `ruff check` + `ruff format` (Python), `eslint` + `prettier` (TS), pre-commit.
 
-Status: 144 Python tests green in ~19 s on HA 2026.10.2 / Python 3.14 (classification,
+Status: 151 Python tests green in ~18 s on HA 2026.10.2 / Python 3.14 (classification,
 discovery, battery tracker, verdict history, evaluation pipeline, entities, config/options
 flow, version gate, notification matrix, websocket subscription, diagnostics, static card
-serving, golden fixture) plus 36 Vitest tests for the card (`cd frontend && npm test`).
+serving, fake-hardware round trip, golden fixture) plus 36 Vitest tests for the card
+(`cd frontend && npm test`).
 
 ---
 
@@ -750,7 +756,10 @@ tests/e2e/
   harness/{onboarding,token,options,dashboard}.ts
   fixtures/watering_project.storage.json
   specs/*.spec.ts
-dev/fake_plants/         # dev-only fake hardware + notify.fake_phone
+dev/fake_plants/         # dev-only fake hardware, own config entry
+  __init__.py            # devices/areas/entities + set_* services
+  config_flow.py         # single-instance UI flow
+  manifest.json, strings.json, translations/en.json, services.yaml
 .github/workflows/
   tests.yml, e2e.yml, hassfest.yml
 hacs.json                # name + HA floor; publish-ready, no HACS install in v1
@@ -807,7 +816,8 @@ step titles.
      diagnostics. **Done.**
 3. **M3 — show**: card (sections, ordering, badges, collapse, states), Vitest + browser mode.
    Card and Vitest done (36 tests); browser mode moved next to Playwright in M4.
-4. **M4 — prove**: `dev/fake_plants` + notify stub, docker compose, onboarding/options
+4. **M4 — prove**: `dev/fake_plants` + notify stub (done, exercised in-process by
+   `tests/test_fake_hardware.py`), docker compose, onboarding/options
    harness, pre-seeded storage fixture, all 8 Playwright scenarios.
 5. **M5 — package**: `hacs.json` (inactive), strings/translations, hassfest job, README install
    + upgrade instructions. Release workflow and HACS publication stay deferred.
@@ -856,8 +866,9 @@ Implemented:
   schema-mismatch/empty states), built to `custom_components/watering_project/www/` and
   served by the integration's static path.
 
-144 Python tests in the Linux image (HA 2026.10.2 / Python 3.14) + 36 Vitest tests.
-Still missing: fake hardware, e2e and packaging.
+151 Python tests in the Linux image (HA 2026.10.2 / Python 3.14) + 36 Vitest tests.
+Fake hardware exists (`dev/fake_plants` + `notify.fake_phone`) and is covered in-process.
+Still missing: docker-compose/Playwright e2e and packaging.
 
 Assumed defaults unless revised: MIT license, `manifest.json` version `0.1.0`, plant label
 from device name, English only, single notify target, single config entry, no overwatering

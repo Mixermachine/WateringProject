@@ -1,0 +1,51 @@
+set_value:
+  name: Set entity value
+  description: Write a raw state string to a fake plant entity.
+  fields:
+    entity_id:
+      name: Entity
+      description: Entity id created by this dev integration.
+      required: true
+      example: sensor.ficus_moisture
+      selector:
+        entity:
+          integration: fake_plants
+    value:
+      name: Value
+      description: New state value, for example 41 or unavailable.
+      required: true
+      example: "41"
+      selector:
+        text:
+
+set_moisture:
+  name: Set moisture
+  description: Alias of set_value for moisture sensors.
+  fields:
+    entity_id:
+      name: Entity
+      required: true
+      selector:
+        entity:
+          domain: sensor
+    value:
+      name: Value
+      required: true
+      selector:
+        text:
+
+set_battery:
+  name: Set battery
+  description: Alias of set_value for battery sensors.
+  fields:
+    entity_id:
+      name: Entity
+      required: true
+      selector:
+        entity:
+          domain: sensor
+    value:
+      name: Value
+      required: true
+      selector:
+        text:

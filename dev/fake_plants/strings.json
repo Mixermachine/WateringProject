@@ -1,0 +1,27 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add fake plants",
+        "description": "Creates the dev-only fake plant devices and notify.fake_phone."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Fake plants are already set up."
+    }
+  },
+  "services": {
+    "set_value": {
+      "name": "Set entity value",
+      "description": "Write a raw state string to a fake plant entity."
+    },
+    "set_moisture": {
+      "name": "Set moisture",
+      "description": "Alias of set_value for moisture sensors."
+    },
+    "set_battery": {
+      "name": "Set battery",
+      "description": "Alias of set_value for battery sensors."
+    }
+  }
+}
