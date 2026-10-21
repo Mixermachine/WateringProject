@@ -74,8 +74,11 @@ The intended surface is its **own tab in the sidebar**, not a card on the overvi
 
 ### Storage mode (default, no YAML)
 
-1. Register the card resource once: **Settings → Dashboards → ⋮ → Resources → Add**,
-   URL `/watering_project/watering-project-card.js?v=0.1.0`, type **JavaScript Module**.
+1. Register the card resource once: **Settings → Dashboards → ⋮ → Resources → Add**
+   and paste only the URL `/watering_project/watering-project-card.js?v=0.1.0`.
+   Current Home Assistant asks for **no type** — resources are always ES modules
+   now (older versions had a "JavaScript Module" dropdown; if yours does, pick it).
+   In YAML the `type: module` line is still required.
 2. **Settings → Dashboards → Add dashboard** → title `Watering Project`, icon
    `mdi:sprout`, **Show in sidebar** on.
 3. Open the new tab → **Add card** → search *Watering Project*.

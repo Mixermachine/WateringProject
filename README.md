@@ -454,7 +454,9 @@ resources on every restart, cache-busting) for a saving of one user click.
   was removed in 2026.x), guarded by a `hass.data` flag — per-entry registration raises on the
   duplicate aiohttp route after the first reload.
 - Serve with `cache_headers=False` (defaults send `max-age=2678400`), and instruct the user
-  once, in README and docs:
+  once, in README and docs. In the UI the resource dialog only asks for the URL — Home
+  Assistant 2026.10 has no type picker, resources are ES modules; the `type: module` line
+  below is only needed in YAML:
 
 ```yaml
 lovelace:
