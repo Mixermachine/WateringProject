@@ -216,6 +216,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.warning("age_battery: %s is not tracked yet", entity_id)
 
     hass.services.async_register(DOMAIN, SERVICE_AGE_BATTERY, _age_battery, AGE_BATTERY_SCHEMA)
+
     async def _reset_notifications(_call: ServiceCall) -> None:
         state["notifications"].clear()
         hass.states.async_set(

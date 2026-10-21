@@ -1,0 +1,2 @@
+# Lint/format only. Pinned so local runs and CI agree byte-for-byte.
+ruff==0.17.1
