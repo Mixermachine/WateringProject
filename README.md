@@ -657,6 +657,12 @@ restart with a plant at `0%` keeps `zero_days`; 10-minute soak.
 # integration tests (Linux; the image is built once and then reused)
 docker build -f docker/test.Dockerfile -t watering-project-tests .
 docker run --rm -v "$PWD":/work -w /work watering-project-tests pytest -q
+# Git Bash on Windows mangles the container path; use:
+#   MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W):/work" -w /work watering-project-tests pytest -q
+
+# prove the contract fixture did not drift (same check as CI job A)
+MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W):/work" -w /work watering-project-tests \
+  sh -c 'pytest tests/test_golden.py --update-golden -q && git diff --exit-code -- frontend/test/fixtures'
 
 # native Windows quick loop (same suite; harness quirks neutralised in conftest.py)
 python -m venv .venv && .venv/Scripts/python.exe -m pip install -r requirements_test_min.txt
