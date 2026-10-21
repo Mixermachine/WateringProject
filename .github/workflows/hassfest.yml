@@ -14,3 +14,5 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: home-assistant/actions/hassfest@master
+
+# keep schedules in sync with tests.yml
