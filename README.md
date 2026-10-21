@@ -413,7 +413,9 @@ Four sections, driven purely by server `status`:
 
 - Ordering inside a section: rooms alphabetically, then moisture ascending, `null` last;
   `Unassigned` last.
-- Compact row: plant name + moisture %, plus a badge when temperature/battery is unknown.
+- Compact row: plant name + moisture %, plus a `temp?`/`batt?` badge when the entity exists
+  but does not report. A plant without a battery sensor is not "unknown" — it has none, and
+  gets no badge.
 - Expanded row: temperature, battery %, absolute **last reported** timestamp
   (`last_reported`, falling back to `last_updated`; never `last_changed`), area, `zero_days`
   when suspect. Absolute timestamps only — relative text would need a render tick.
@@ -608,17 +610,23 @@ respects: it blocks sockets except AF_UNIX, and `aiodns` refuses the Proactor lo
 forces on Home Assistant. A native Windows venv on Python 3.13 can no longer run the suite, by
 design; that is the cost of the single-leg floor.
 
-### L3 — card (Vitest + jsdom, golden fixture)
+### L3 — card (Vitest + jsdom, golden fixture) — implemented
 
-Section placement per `status`, ordering (rooms, moisture, `null` last, `Unassigned` last),
-collapse round-trip with and without `id`, expanded rows, excluded footer, connecting/
-`not_loaded`/schema-mismatch/empty states, event handling, reconnect re-render. Budgets:
+36 tests in `frontend/`: section placement per `status`, ordering (rooms, moisture, `null`
+last, `Unassigned` last), collapse round-trip with and without `id`, expanded rows, badges,
+excluded footer, loading/`not_loaded`/schema-mismatch/empty states, and the update budget —
 **1000 unrelated state updates → zero re-renders**; **200 plants: initial render < 300 ms,
-memo hit < 0.1 ms in jsdom**.
+memo hit < 0.1 ms**.
+
+Two traps found here, both worth remembering: Lit's generated accessor for a declared `hass`
+property **shadows** a hand-written memoising setter (so `hass` is deliberately not a reactive
+property), and this jsdom build hands out a `localStorage` without its prototype methods, so
+`frontend/test/setup.ts` installs a minimal in-memory `Storage`.
 
 ### L3b — Vitest browser mode
 
-Real DOM for interaction and layout, no Docker.
+Real DOM for interaction and layout, no Docker. Deferred to M4, where Playwright already
+downloads a browser image.
 
 ### L4 — end-to-end (Playwright against Docker HA) — 8 scenarios
 
@@ -692,9 +700,10 @@ npx playwright test
 
 Lint/format: `ruff check` + `ruff format` (Python), `eslint` + `prettier` (TS), pre-commit.
 
-Status: 143 tests green in ~19 s on HA 2026.10.2 / Python 3.14 (classification, discovery,
-battery tracker, verdict history, evaluation pipeline, entities, config/options flow, version
-gate, notification matrix, websocket subscription, diagnostics, golden fixture).
+Status: 144 Python tests green in ~19 s on HA 2026.10.2 / Python 3.14 (classification,
+discovery, battery tracker, verdict history, evaluation pipeline, entities, config/options
+flow, version gate, notification matrix, websocket subscription, diagnostics, static card
+serving, golden fixture) plus 36 Vitest tests for the card (`cd frontend && npm test`).
 
 ---
 
@@ -711,12 +720,10 @@ custom_components/watering_project/
   classification.py      # pure verdict function
   battery.py             # battery observation tracker
   verdicts.py            # persisted previous statuses (hysteresis across restart)
-  notifications.py       # confirmed recovery, hard floor, repair issues
   store.py               # one versioned Store document per entry
   entity.py
   binary_sensor.py       # needs_water per plant, plants_need_water aggregate
   sensor.py              # status per plant, plants_needing_water aggregate
-  websocket_api.py       # watering_project/subscribe + permission filter
   diagnostics.py
   config_flow.py
   const.py
@@ -724,11 +731,14 @@ custom_components/watering_project/
   strings.json, translations/en.json
   www/watering-project-card.js   # committed build output
 frontend/
-  src/watering-project-card.ts
-  src/sections.ts        # presentation only
-  src/types.ts           # payload schema, EXPECTED_SCHEMA
+  src/watering-project-card.ts   # Lit element + card-picker registration
+  src/grouping.ts                # sections, ordering, formatting (presentation only)
+  src/types.ts                   # payload schema, EXPECTED_SCHEMA
+  test/card.test.ts              # render states, collapse, badges, update budget
+  test/grouping.test.ts          # ordering + formatting unit tests
+  test/setup.ts                  # jsdom localStorage polyfill
   test/fixtures/plants.golden.json
-  package.json, vite.config.ts, tsconfig.json
+  package.json, package-lock.json, vite.config.ts, tsconfig.json
 tests/
   conftest.py, test_classification.py, test_discovery.py, test_battery.py,
   test_verdicts.py, test_evaluate.py, test_entities.py, test_config_flow.py,
@@ -796,6 +806,7 @@ step titles.
      per-connection permission filtering, payload builder + signature, static path,
      diagnostics. **Done.**
 3. **M3 — show**: card (sections, ordering, badges, collapse, states), Vitest + browser mode.
+   Card and Vitest done (36 tests); browser mode moved next to Playwright in M4.
 4. **M4 — prove**: `dev/fake_plants` + notify stub, docker compose, onboarding/options
    harness, pre-seeded storage fixture, all 8 Playwright scenarios.
 5. **M5 — package**: `hacs.json` (inactive), strings/translations, hassfest job, README install
@@ -824,7 +835,7 @@ MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Aaron Dietz.
 
 ## Status
 
-M0, M1, M2a and M2b implemented. M3–M5 pending. Repository:
+M0–M3 implemented. M4–M5 pending (fake hardware, e2e, packaging). Repository:
 <https://github.com/Mixermachine/WateringProject> (private, branch `main`).
 
 Implemented:
@@ -840,9 +851,13 @@ Implemented:
   issues), `payload.py` (single payload contract + change signature), `websocket_api.py`
   (`watering_project/subscribe` with per-connection permission filtering, initial payload
   as an event), static path registration, `diagnostics.py` with redaction.
+- **M3** — Lit card in `frontend/` (four sections, room/moisture ordering, compact rows with
+  expand, badges, excluded footer, collapse persistence, loading/`not_loaded`/
+  schema-mismatch/empty states), built to `custom_components/watering_project/www/` and
+  served by the integration's static path.
 
-143 tests green in the Linux image (HA 2026.10.2 / Python 3.14). Still missing: the card,
-fake hardware and e2e.
+144 Python tests in the Linux image (HA 2026.10.2 / Python 3.14) + 36 Vitest tests.
+Still missing: fake hardware, e2e and packaging.
 
 Assumed defaults unless revised: MIT license, `manifest.json` version `0.1.0`, plant label
 from device name, English only, single notify target, single config entry, no overwatering
