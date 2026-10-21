@@ -25,7 +25,7 @@ test.beforeEach(async ({}, testInfo) => {
   await resetBaseline();
 });
 
-test("1. mounts the card without console errors", async ({ page }) => {
+test("1. mounts on its own sidebar tab, not on the main page", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
@@ -36,7 +36,17 @@ test("1. mounts the card without console errors", async ({ page }) => {
 
   await openDashboard(page);
 
+  // The dashboard is a real sidebar entry (title + mdi:sprout icon).
+  const sidebar = page.locator("ha-sidebar");
+  await expect(sidebar.getByRole("link", { name: "Watering Project" })).toBeVisible();
+
   await expect(card(page)).toBeVisible();
+  await expect(card(page).locator("ha-card")).toHaveCount(1);
+
+  // ... and the overview must stay clean.
+  await page.goto("/lovelace/0");
+  await expect(page.locator("watering-project-card")).toHaveCount(0);
+
   expect(errors).toEqual([]);
 });
 

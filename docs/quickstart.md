@@ -63,27 +63,53 @@ Open the integration's **Configure** dialog:
 | `include_devices` / `exclude_devices` | empty | Overrides the automatic keyword exclusion |
 | `notify_enabled` + `notify_service` | off | Phone push when plants need water |
 | `notify_repeat_hours` | 24 | Repeat interval while a drought continues (0 = never repeat) |
-| `notify_url` | `/lovelace/0` | Opened when the notification is tapped |
+| `notify_url` | empty | Opened when the notification is tapped; set it to `/watering-project` so taps land on the plant tab |
 
 Hysteresis is fixed: a plant that is already dry only counts as watered again at
 `moisture_default + 5`.
 
-## 4. Add the card
+## 4. Add the sidebar tab
+
+The intended surface is its **own tab in the sidebar**, not a card on the overview.
+
+### Storage mode (default, no YAML)
+
+1. Register the card resource once: **Settings → Dashboards → ⋮ → Resources → Add**,
+   URL `/watering_project/watering-project-card.js?v=0.1.0`, type **JavaScript Module**.
+2. **Settings → Dashboards → Add dashboard** → title `Watering Project`, icon
+   `mdi:sprout`, **Show in sidebar** on.
+3. Open the new tab → **Add card** → search *Watering Project*.
+
+### YAML mode
 
 ```yaml
 lovelace:
+  mode: yaml
   resources:
     - url: /watering_project/watering-project-card.js?v=0.1.0
       type: module
+  dashboards:
+    watering-project:
+      mode: yaml
+      title: Watering Project
+      icon: mdi:sprout
+      show_in_sidebar: true
+      filename: watering-dashboard.yaml
 ```
-
-Then add a card:
 
 ```yaml
-type: custom:watering-project-card
-title: Plants      # optional
-id: plants-main    # optional, needed for collapse persistence
+# watering-dashboard.yaml — the card is the whole view
+views:
+  - title: Watering Project
+    type: panel
+    cards:
+      - type: custom:watering-project-card
+        id: plants-main
+        title: Watering Project
 ```
+
+`id` is optional but enables collapse persistence. On a storage-mode dashboard the
+card can also be added to any view; `type: panel` simply gives it the full width.
 
 After an upgrade, bump `?v=` (for example `?v=0.1.0` → `?v=0.2.0`). Without the
 bump, phones and browsers keep the cached card. A stale card shows a version
@@ -123,6 +149,7 @@ automation:
   moved to section 1 and a repair issue appears; it will not be reported as thirsty
   while the battery is suspect.
 - **Nothing in the card** — check the resource URL version and that the card element
-  is `custom:watering-project-card`.
+  is `custom:watering-project-card`. Also check the tab exists under
+  **Settings → Dashboards** and is set to show in the sidebar.
 - **Diagnostics** — Settings → Devices & services → Watering Project → ⋮ →
   Download diagnostics. Identifiers and labels are hashed.

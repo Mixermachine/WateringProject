@@ -1,7 +1,4 @@
+# The main page stays free of the card on purpose: the integration has its own tab.
 views:
-  - title: Plants
-    path: plants
-    cards:
-      - type: custom:watering-project-card
-        id: plants-main
-        title: Plants
+  - title: Overview
+    cards: []

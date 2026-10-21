@@ -393,10 +393,21 @@ plants — the mitigation for "suspect plants are never notified as thirsty".
 
 ## Card
 
+The intended surface is a **dedicated sidebar tab** (`Watering Project`, `mdi:sprout`)
+whose view is the card — not a card on the overview dashboard. The dashboard is
+registered by the user (UI or YAML, see `docs/quickstart.md`); the integration does
+not create dashboards for the same reason it does not auto-register resources:
+both are version-fragile, non-idempotent frontend writes.
+
 ```yaml
-type: custom:watering-project-card
-title: Plants        # optional
-id: plants-main      # optional, enables collapse persistence
+# dashboard view (type: panel gives the card the full width)
+views:
+  - title: Watering Project
+    type: panel
+    cards:
+      - type: custom:watering-project-card
+        title: Watering Project   # optional
+        id: plants-main           # optional, enables collapse persistence
 ```
 
 Registered in the card picker via `window.customCards.push({type, name, description})`;
@@ -499,7 +510,9 @@ top-level `watering_project/` folder — unzip it into `/config/custom_component
 2. Restart Home Assistant.
 3. Add the integration (Settings → Devices & services → Add integration → *Watering Project*)
    and pick the plant devices in the options flow.
-4. Add the Lovelace resource once (see Registration above), then add the card.
+4. Add the Lovelace resource once (see Registration above), then add the dedicated
+   dashboard tab (Settings → Dashboards, show in sidebar) and put the card on it —
+   see `docs/quickstart.md`.
 
 ### Upgrade
 

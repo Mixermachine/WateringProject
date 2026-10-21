@@ -58,7 +58,7 @@ export default async function globalSetup(): Promise<void> {
     notify_enabled: false,
     notify_service: hasNotify ? "fake_phone" : "",
     notify_repeat_hours: 24,
-    notify_url: "/lovelace/plants",
+    notify_url: "/watering-project",
   });
 
   const monsteraDeviceId = await findDeviceId(tokens.access_token, "Monstera");

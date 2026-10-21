@@ -1,0 +1,8 @@
+# Dedicated sidebar tab: the card is the whole view, nothing else on the page.
+views:
+  - title: Watering Project
+    type: panel
+    cards:
+      - type: custom:watering-project-card
+        id: plants-main
+        title: Watering Project

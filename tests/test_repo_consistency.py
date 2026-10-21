@@ -123,3 +123,31 @@ def test_package_script_ships_the_runtime_files() -> None:
     assert "translations/en.json" in names
     assert "strings.json" in names
     assert not any("__pycache__" in name or name.endswith(".pyc") for name in names)
+
+
+def test_e2e_ships_a_dedicated_sidebar_dashboard() -> None:
+    """The documented surface is its own tab, not a card on the overview."""
+    config = E2E_CONFIG.read_text(encoding="utf-8")
+    dashboard = ROOT / "tests" / "e2e" / "config" / "watering-dashboard.yaml"
+    overview = ROOT / "tests" / "e2e" / "config" / "ui-lovelace.yaml"
+
+    assert dashboard.exists()
+    assert "filename: watering-dashboard.yaml" in config
+    assert "title: Watering Project" in config
+    assert "icon: mdi:sprout" in config
+    assert "show_in_sidebar: true" in config
+    assert "mode: yaml" in config
+
+    dashboard_content = dashboard.read_text(encoding="utf-8")
+    assert "type: panel" in dashboard_content
+    assert "type: custom:watering-project-card" in dashboard_content
+
+    # The overview must not embed the card.
+    assert "custom:watering-project-card" not in overview.read_text(encoding="utf-8")
+
+
+def test_e2e_notify_url_points_at_the_dashboard() -> None:
+    harness = (ROOT / "tests" / "e2e" / "harness" / "state.ts").read_text(encoding="utf-8")
+
+    assert '"/watering-project"' in harness
+    assert "lovelace/plants" not in harness

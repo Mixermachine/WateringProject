@@ -59,7 +59,7 @@ export async function resetBaseline(): Promise<void> {
     notify_enabled: false,
     notify_service: "fake_phone",
     notify_repeat_hours: 24,
-    notify_url: "/lovelace/plants",
+    notify_url: "/watering-project",
   });
 
   await waitForState(token, "sensor.watering_project_plants_needing_water", (value) => value === "3");
@@ -78,7 +78,7 @@ export async function enableNotifications(): Promise<void> {
     notify_enabled: true,
     notify_service: "fake_phone",
     notify_repeat_hours: 24,
-    notify_url: "/lovelace/plants",
+    notify_url: "/watering-project",
   });
 }
 
@@ -91,14 +91,14 @@ export async function excludeCactus(): Promise<void> {
     notify_enabled: false,
     notify_service: "fake_phone",
     notify_repeat_hours: 24,
-    notify_url: "/lovelace/plants",
+    notify_url: "/watering-project",
   });
 }
 
 /** Open the dashboard with a pre-seeded token and wait for the card. */
 export async function openDashboard(page: Page): Promise<void> {
   await page.addInitScript(await browserTokens(state.tokens));
-  await page.goto("/lovelace/plants");
+  await page.goto("/watering-project");
   await expectCardReady(page);
 }
 

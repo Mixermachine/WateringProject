@@ -7,6 +7,13 @@ lovelace:
   resources:
     - url: /watering_project/watering-project-card.js?v=0.1.0
       type: module
+  dashboards:
+    watering-project:
+      mode: yaml
+      title: Watering Project
+      icon: mdi:sprout
+      show_in_sidebar: true
+      filename: watering-dashboard.yaml
 
 logger:
   default: warning
