@@ -102,3 +102,24 @@ def test_committed_bundle_exists_and_is_a_module() -> None:
     # A `customElements.define` inside the bundle is what makes the resource usable
     # with a plain `type: module` resource entry.
     assert "customElements.define" in text
+
+
+def test_package_script_ships_the_runtime_files() -> None:
+    """The HAOS zip must contain the card bundle and translations, not caches."""
+    import importlib.util
+
+    script = ROOT / "scripts" / "package_integration.py"
+    spec = importlib.util.spec_from_file_location("package_integration", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    names = {
+        str(path.relative_to(module.SOURCE)).replace("\\", "/") for path in module.iter_files()
+    }
+
+    assert "manifest.json" in names
+    assert "www/watering-project-card.js" in names
+    assert "translations/en.json" in names
+    assert "strings.json" in names
+    assert not any("__pycache__" in name or name.endswith(".pyc") for name in names)

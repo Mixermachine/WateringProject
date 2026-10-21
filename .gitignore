@@ -7,6 +7,9 @@ venv/
 .ruff_cache/
 *.egg-info/
 
+# Packaged integration zip
+dist/
+
 # Node / card build
 node_modules/
 frontend/node_modules/

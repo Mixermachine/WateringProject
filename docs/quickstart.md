@@ -11,7 +11,32 @@ folder name must be exactly `watering_project`.
 
 No Node, no npm, no Python packages: the card bundle is committed build output.
 
-Restart Home Assistant.
+### Home Assistant OS / Supervised
+
+Build the zip once on your computer (`python scripts/package_integration.py` →
+`dist/watering_project.zip`, one top-level `watering_project/` folder), then pick
+one route:
+
+- **Samba share** add-on (easiest): configure a user, open
+  `\homeassistant\config\custom_components` in Explorer/Finder, drop the
+  unzipped `watering_project` folder there.
+- **Advanced SSH & Web Terminal** add-on: upload the zip to `/config` (SFTP or
+  `scp`), then
+
+  ```bash
+  cd /config/custom_components
+  unzip -o /config/watering_project.zip
+  ha core restart
+  ```
+
+- **File editor** add-on: can create files but not upload folders — only usable if
+  you paste every file by hand. Not recommended.
+
+Verify the nesting: `/config/custom_components/watering_project/manifest.json` must
+exist. A double folder (`watering_project/watering_project/`) is the usual "integration
+not found" cause.
+
+Restart Home Assistant (`ha core restart` or Settings → System → Restart).
 
 ## 2. Add the integration
 

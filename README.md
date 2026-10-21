@@ -488,6 +488,10 @@ Live-edited, no build step on the HA side: the card JS is committed build output
 
 ### Manual install on a real instance
 
+`python scripts/package_integration.py` produces `dist/watering_project.zip` with one
+top-level `watering_project/` folder — unzip it into `/config/custom_components/` on HAOS
+(Samba share or SSH add-on). See `docs/quickstart.md`.
+
 1. Copy the **whole** `custom_components/watering_project/` folder to
    `/config/custom_components/watering_project/`. The folder name must equal the domain
    `watering_project` — a partial or renamed copy is the usual "integration not found" cause.
@@ -777,6 +781,7 @@ tests/
   test_golden.py
 docker/test.Dockerfile   # Linux test image (authoritative harness)
 docs/quickstart.md          # user-facing install/configure/automation guide
+scripts/package_integration.py  # dist/watering_project.zip for HAOS installs
 tests/e2e/
   README.md, docker-compose.yml, playwright.config.ts, package.json, tsconfig.json
   config/{configuration.yaml,ui-lovelace.yaml}   # runtime state gitignored
