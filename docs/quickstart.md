@@ -68,55 +68,25 @@ Open the integration's **Configure** dialog:
 Hysteresis is fixed: a plant that is already dry only counts as watered again at
 `moisture_default + 5`.
 
-## 4. Add the sidebar tab
+## 4. Open the sidebar tab
 
-The intended surface is its **own tab in the sidebar**, not a card on the overview.
+Nothing to install here. The integration registers its own sidebar entry
+(`Watering Project`, sprout icon) when it is set up — no Lovelace resource, no
+dashboard, no YAML.
 
-### Storage mode (default, no YAML)
+- First visit: the tab is there immediately after adding the integration. If you
+  were already on the page, reload it once so Home Assistant picks up the new
+  panel.
+- Removing the integration removes the tab again.
 
-1. Register the card resource once: **Settings → Dashboards → ⋮ → Resources → Add**
-   and paste only the URL `/watering_project/watering-project-card.js?v=0.1.0`.
-   Current Home Assistant asks for **no type** — resources are always ES modules
-   now (older versions had a "JavaScript Module" dropdown; if yours does, pick it).
-   In YAML the `type: module` line is still required.
-2. **Settings → Dashboards → Add dashboard** → title `Watering Project`, icon
-   `mdi:sprout`, **Show in sidebar** on.
-3. Open the new tab → **Add card** → search *Watering Project*.
+### Want the card on a normal dashboard too?
 
-### YAML mode
-
-```yaml
-lovelace:
-  mode: yaml
-  resources:
-    - url: /watering_project/watering-project-card.js?v=0.1.0
-      type: module
-  dashboards:
-    watering-project:
-      mode: yaml
-      title: Watering Project
-      icon: mdi:sprout
-      show_in_sidebar: true
-      filename: watering-dashboard.yaml
-```
-
-```yaml
-# watering-dashboard.yaml — the card is the whole view
-views:
-  - title: Watering Project
-    type: panel
-    cards:
-      - type: custom:watering-project-card
-        id: plants-main
-        title: Watering Project
-```
-
-`id` is optional but enables collapse persistence. On a storage-mode dashboard the
-card can also be added to any view; `type: panel` simply gives it the full width.
-
-After an upgrade, bump `?v=` (for example `?v=0.1.0` → `?v=0.2.0`). Without the
-bump, phones and browsers keep the cached card. A stale card shows a version
-mismatch row instead of breaking silently.
+Optional, and the only case that needs a resource: **Settings → Dashboards → ⋮ →
+Resources → Add** → paste
+`/watering_project/watering-project-card.js?v=0.2.0` (Home Assistant 2026.10 asks
+for no type; older versions offered "JavaScript Module"). Then **Add card** →
+*Watering Project*. Without a resource the card is not in the picker, but the
+sidebar tab works regardless.
 
 ## 5. Automations
 
@@ -151,8 +121,8 @@ automation:
 - **Battery shows 0 % for weeks** — expected for rechargeable sensors. The plant is
   moved to section 1 and a repair issue appears; it will not be reported as thirsty
   while the battery is suspect.
-- **Nothing in the card** — check the resource URL version and that the card element
-  is `custom:watering-project-card`. Also check the tab exists under
-  **Settings → Dashboards** and is set to show in the sidebar.
+- **Tab missing** — reload the browser once. The panel is registered when the
+  config entry is set up; a page loaded before that does not show it. If the entry
+  is unloaded/disabled, the tab stays but the card shows its `not_loaded` row.
 - **Diagnostics** — Settings → Devices & services → Watering Project → ⋮ →
   Download diagnostics. Identifiers and labels are hashed.

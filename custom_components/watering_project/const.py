@@ -12,6 +12,10 @@ DOMAIN: Final = "watering_project"
 #: requirements_test.txt, not separately.
 MIN_HOMEASSISTANT_VERSION: Final = "2026.10.0"
 
+#: Mirrors ``manifest.json`` (enforced by ``tests/test_repo_consistency.py``).
+#: Used only for frontend cache busting of the card/panel bundle.
+VERSION: Final = "0.2.0"
+
 # --- Schema / storage -------------------------------------------------------
 
 SCHEMA_VERSION: Final = 1
@@ -97,6 +101,16 @@ ENTITY_NEEDS_WATER: Final = "needs_water"
 ENTITY_STATUS: Final = "status"
 ENTITY_PLANTS_NEED_WATER: Final = "plants_need_water"
 ENTITY_PLANTS_NEEDING_WATER: Final = "plants_needing_water"
+
+# --- Frontend surface -------------------------------------------------------
+
+#: The integration owns one sidebar entry. It is a custom panel, not a Lovelace
+#: dashboard: no dashboard to create, no Lovelace resource to register, and it
+#: cannot be broken by the user editing the dashboard.
+PANEL_URL_PATH: Final = "watering-project"
+PANEL_ELEMENT: Final = "watering-project-panel"
+PANEL_TITLE: Final = "Watering Project"
+PANEL_ICON: Final = "mdi:sprout"
 
 # --- Events / websocket -----------------------------------------------------
 

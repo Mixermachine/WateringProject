@@ -13,6 +13,7 @@ import {
   type SectionKey,
   type SectionSpec,
 } from "./grouping";
+import { PANEL_TYPE, WateringProjectPanel } from "./panel";
 import {
   EXPECTED_SCHEMA,
   type CardConfig,
@@ -303,7 +304,10 @@ export class WateringProjectCard extends LitElement {
   // -- collapse state --------------------------------------------------------
 
   private _storageKey(): string | undefined {
-    const id = this._config?.id;
+    // The sidebar panel mounts exactly one card and passes no Lovelace config, so
+    // a fixed key is enough to keep the collapse state across reloads. Cards on a
+    // dashboard need an explicit `id`: several instances may share a page.
+    const id = this._config?.id ?? (this._config === undefined ? "panel" : undefined);
     return id === undefined || id === "" ? undefined : `${STORAGE_PREFIX}${id}:collapsed`;
   }
 
@@ -709,6 +713,9 @@ declare global {
 if (typeof window !== "undefined" && typeof customElements !== "undefined") {
   if (!customElements.get(CARD_TYPE)) {
     customElements.define(CARD_TYPE, WateringProjectCard);
+  }
+  if (!customElements.get(PANEL_TYPE)) {
+    customElements.define(PANEL_TYPE, WateringProjectPanel);
   }
   window.customCards = window.customCards ?? [];
   if (!window.customCards.some((card) => card["type"] === CARD_TYPE)) {

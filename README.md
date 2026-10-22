@@ -30,7 +30,7 @@ actually meaningful. Plant status must not be polluted by those false alarms.
 - Backfilling battery history from before installation.
 - Multiple notification targets, per-plant notification rules, quiet hours.
 - Multiple config entries (single instance in v1).
-- Auto-registering the Lovelace resource (see Registration).
+- A Lovelace resource or dashboard to install (the integration owns a sidebar panel).
 - Publishing to HACS, auto-update, update notifications (scaffolding is kept, see Deployment).
 - Blueprints (built-in notifier covers v1).
 
@@ -393,25 +393,20 @@ plants — the mitigation for "suspect plants are never notified as thirsty".
 
 ## Card
 
-The intended surface is a **dedicated sidebar tab** (`Watering Project`, `mdi:sprout`)
-whose view is the card — not a card on the overview dashboard. The dashboard is
-registered by the user (UI or YAML, see `docs/quickstart.md`); the integration does
-not create dashboards for the same reason it does not auto-register resources:
-both are version-fragile, non-idempotent frontend writes.
+The surface is a **dedicated sidebar tab** (`Watering Project`, `mdi:sprout`) that the
+integration registers itself — no Lovelace dashboard, no resource, no `lovelace` storage
+write. Adding the integration is the whole installation.
 
-```yaml
-# dashboard view (type: panel gives the card the full width)
-views:
-  - title: Watering Project
-    type: panel
-    cards:
-      - type: custom:watering-project-card
-        title: Watering Project   # optional
-        id: plants-main           # optional, enables collapse persistence
+```text
+sidebar: Watering Project (mdi:sprout)
+  └── <watering-project-panel>        # integration panel, module_url = the card bundle
+        └── <watering-project-card>   # presentation only, subscribes over websocket
 ```
 
-Registered in the card picker via `window.customCards.push({type, name, description})`;
-implements `getCardSize()` and `getGridOptions()`.
+The module also defines `<watering-project-card>` and registers it in the card picker via
+`window.customCards.push({type, name, description})`, so power users can still drop the card
+on a normal dashboard (that *does* need a resource entry). It implements `getCardSize()` and
+`getGridOptions()`.
 
 Four sections, driven purely by server `status`:
 
@@ -443,36 +438,48 @@ Four sections, driven purely by server `status`:
 - Theming: HA CSS variables only. Sections expose `aria-expanded`, keyboard operable.
 - English-only strings in v1, hardcoded.
 
-### Registration (manual in v1)
+### Registration (automatic)
 
-Auto-registration was cut deliberately: it was the most version-fragile code in the project
-(Lovelace data shape changes, `ResourceYAMLCollection` lacking `async_create_item`, duplicate
-resources on every restart, cache-busting) for a saving of one user click.
+`async_setup_entry` registers the tab once per entry:
 
+```python
+await panel_custom.async_register_panel(
+    hass,
+    frontend_url_path="watering-project",
+    webcomponent_name="watering-project-panel",
+    sidebar_title="Watering Project",
+    sidebar_icon="mdi:sprout",
+    module_url=f"{STATIC_URL_PATH}/{CARD_FILENAME}?v={VERSION}",
+    config={},
+)
+```
+
+- `ha-panel-custom` loads `module_url` and waits for `<watering-project-panel>` to be defined
+  before mounting it, so the card cannot race the first render. This is the reason the surface
+  is a panel and not a Lovelace resource: resources are not awaited the same way.
+- A panel is not part of Lovelace storage, so the failure modes of auto-registering resources
+  (duplicate entries on every restart, YAML-mode collections lacking `async_create_item`,
+  cache-busting churn) do not apply.
+- Registered in `async_setup_entry`, removed in `async_remove_entry`. It deliberately survives
+  a plain unload/reload: adding and removing the panel in quick succession (an options save
+  reloads the entry) makes the frontend treat the route as unknown and bounce the next visit
+  to the default dashboard — caught by e2e, fixed by moving removal to `async_remove_entry`.
+- Cache busting is derived from `const.VERSION`, which mirrors `manifest.json`
+  (`tests/test_repo_consistency.py` fails when they drift). No manual `?v=` bump.
 - Static path is registered **once in `async_setup`** via
   `hass.http.async_register_static_paths([StaticPathConfig(...)])` (the module-level helper
   was removed in 2026.x), guarded by a `hass.data` flag — per-entry registration raises on the
   duplicate aiohttp route after the first reload.
-- Serve with `cache_headers=False` (defaults send `max-age=2678400`), and instruct the user
-  once, in README and docs. In the UI the resource dialog only asks for the URL — Home
-  Assistant 2026.10 has no type picker, resources are ES modules; the `type: module` line
-  below is only needed in YAML:
-
-```yaml
-lovelace:
-  resources:
-    - url: /watering_project/watering-project-card.js?v=0.1.0
-      type: module
-```
-
-- Documented consequence: after an upgrade the user must bump `?v=` manually, otherwise the
-  cached card persists (companion-app webviews cache JS aggressively).
+- Serve with `cache_headers=False` (defaults send `max-age=2678400`). An upgrade changes
+  `VERSION`, hence the URL, so no stale bundle; a browser that cached the old URL keeps it
+  until the panel asks for the new one, which happens on the next page load.
 - `__init__.py` defines `CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)` because
   `async_setup` exists; hassfest rejects an integration with `async_setup` and no schema.
 - `hacs.json` declares the supported floor `2026.10.0`, and `async_setup_entry` enforces it at
   runtime by raising `ConfigEntryError` with a readable message. The manifest schema has no
   minimum-version key, so the floor is not duplicated there.
-- `manifest.json`: `"dependencies": ["http", "websocket_api"]`,
+- `manifest.json`: `"dependencies": ["frontend", "http", "panel_custom", "websocket_api"]`,
+  `"version": "0.2.0"`,
   `"documentation": "https://github.com/Mixermachine/WateringProject#readme"`,
   `"issue_tracker": "https://github.com/Mixermachine/WateringProject/issues"`,
   `"iot_class": "local_polling"`, `"integration_type": "hub"`.
@@ -487,7 +494,8 @@ the maintainer view.
 No publishing required. Primary path is a Docker-mounted dev instance; the same folder works
 as a manual install on a real HA instance.
 
-**Repository:** <https://github.com/Mixermachine/WateringProject> (private). HACS is not used.
+**Repository:** <https://github.com/Mixermachine/WateringProject> (public, HACS custom
+integration; releases trigger the HACS action).
 
 ### Docker mount (primary dev / e2e path)
 
@@ -510,18 +518,15 @@ top-level `watering_project/` folder — unzip it into `/config/custom_component
    `watering_project` — a partial or renamed copy is the usual "integration not found" cause.
    No Node, no npm, no Python install needed on the HA host.
 2. Restart Home Assistant.
-3. Add the integration (Settings → Devices & services → Add integration → *Watering Project*)
-   and pick the plant devices in the options flow.
-4. Add the Lovelace resource once (see Registration above), then add the dedicated
-   dashboard tab (Settings → Dashboards, show in sidebar) and put the card on it —
-   see `docs/quickstart.md`.
+3. Add the integration (Settings → Devices & services → Add integration → *Watering Project*).
+   The **Watering Project** sidebar tab appears immediately; nothing else to install.
 
 ### Upgrade
 
-Replace the folder, restart HA, and bump the `?v=` query on the resource line (for example
-`?v=0.1.0` → `?v=0.2.0`). Skipping the `?v=` bump leaves the old card cached — companion-app
-webviews cache JS aggressively. Payload compatibility across mismatched versions is handled by
-`schema_version` and rendered as a mismatch row rather than a blank card.
+Replace the folder and restart HA. The panel URL carries the manifest version
+(`?v=<VERSION>`), so a new release fetches a new bundle automatically — no resource line to
+edit. Payload compatibility across mismatched versions is handled by `schema_version` and
+rendered as a mismatch row rather than a blank card.
 
 ### Distribution status
 
@@ -666,9 +671,9 @@ Harness (`harness/api.ts`): onboarding automation (`/api/onboarding/users` → `
 `analytics` → `integration`), token via `/auth/token`, entries created through
 `/api/config/config_entries/flow`, **options set through the real options flow**
 (`POST /api/config/config_entries/options/flow` with the **entry id** as `handler`), and
-`localStorage["hassTokens"]` seeded via `addInitScript`. The dashboard is YAML
-(`config/ui-lovelace.yaml`) with the resource declared under `lovelace.resources` in
-`configuration.yaml`.
+`localStorage["hassTokens"]` seeded via `addInitScript`. The e2e config has **no `lovelace:`
+block** — no resource, no dashboard — because the panel must register itself; the harness
+navigates straight to `/watering-project`.
 
 `dev/fake_plants/` (dev-only; mounted into `custom_components/fake_plants`) creates real
 registry entries via `er/dr.async_get_or_create` with `device_id`, `suggested_area` and
@@ -687,7 +692,7 @@ Readiness probing uses `/auth/providers`, never `/api/*`: unauthenticated `/api/
 401 and Home Assistant bans the runner IP after a handful of them (observed, then fixed).
 
 Scenarios:
-1. Mount, resource present, card renders without console errors.
+1. Sidebar tab exists, panel mounts the card, overview stays clean, no console errors.
 2. Four sections correct; `needs_water` entities match section 2.
 3. Section 1 hidden with no suspect sensors; appears with the pre-seeded 31-day `zero_since`.
 4. Plant `dry` → `healthy` live, hysteresis respected (`72 %` keeps it dry, `76 %` releases).
@@ -865,9 +870,10 @@ step titles.
 4. **M4 — prove**: `dev/fake_plants` + notify stub (done, exercised in-process by
    `tests/test_fake_hardware.py`), docker compose + Playwright (done, 8/8 scenarios)
    harness, pre-seeded storage fixture, all 8 Playwright scenarios.
-5. **M5 — package**: `hacs.json` (inactive), strings/translations, three CI workflows
-   (`tests`, `e2e`, `hassfest`), README install + upgrade instructions. `hassfest` clean.
-   Tagged `v0.1.0`. Release workflow and HACS publication stay deferred.
+5. **M5 — package**: `hacs.json`, strings/translations, four CI workflows
+   (`tests`, `e2e`, `hassfest`, `hacs`), README install + upgrade instructions.
+   `hassfest` clean. Tagged `v0.1.0`; `v0.2.0` replaces the manual resource/dashboard
+   install with the integration's own sidebar panel.
 
 ## Definition of done (v1)
 
@@ -892,8 +898,9 @@ MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Aaron Dietz.
 
 ## Status
 
-M0–M5 implemented: v1 is feature-complete and tagged `v0.1.0`. Repository:
-<https://github.com/Mixermachine/WateringProject> (private, branch `main`).
+M0–M5 implemented; the current release is `v0.2.0` (install = add the integration, the
+sidebar tab registers itself). Repository:
+<https://github.com/Mixermachine/WateringProject> (public, branch `main`).
 
 Implemented:
 
@@ -917,10 +924,10 @@ Implemented:
   scenarios from L4.
 - **M5** — CI (`tests`, `e2e`, `hassfest`), hassfest clean, install/upgrade docs, tag `v0.1.0`.
 
-151 Python tests in the Linux image (HA 2026.10.2 / Python 3.14) + 36 Vitest tests + 8
+165 Python tests in the Linux image (HA 2026.10.2 / Python 3.14) + 43 Vitest tests + 8
 Playwright scenarios against a real Home Assistant container. `hassfest` reports zero invalid
-integrations. Tags: `v0.1.0`.
+integrations. Tags: `v0.1.0`, `v0.2.0`.
 
-Assumed defaults unless revised: MIT license, `manifest.json` version `0.1.0`, plant label
-from device name, English only, single notify target, single config entry, no overwatering
-threshold, manual resource registration, no HACS publishing.
+Assumed defaults: MIT license, `manifest.json` version `0.2.0`, plant label from device name,
+English only, single notify target, single config entry, no overwatering threshold, automatic
+panel registration, HACS distribution.

@@ -3,3 +3,6 @@
 # homeassistant release per version, so this file must stay pinned to one package
 # version (0.13.373 -> homeassistant==2026.10.2, requires Python >= 3.14).
 pytest-homeassistant-custom-component==0.13.373
+# The integration registers a `panel_custom` sidebar entry, so `frontend` must be
+# able to set up in the test image. The HA wheel does not ship `hass_frontend`.
+home-assistant-frontend==20260930.4

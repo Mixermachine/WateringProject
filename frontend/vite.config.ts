@@ -1,8 +1,9 @@
 import { defineConfig } from "vite";
 
-// The card is shipped as one self-contained ES module that Home Assistant loads
-// straight from `/watering_project/watering-project-card.js`. Lit is bundled on
-// purpose: a second module request would have to be cache-busted as well.
+// The card and the sidebar panel are shipped as one self-contained ES module that
+// Home Assistant loads straight from `/watering_project/watering-project-card.js`
+// (the panel's `module_url`). Lit is bundled on purpose: a second module request
+// would have to be cache-busted as well.
 export default defineConfig({
   build: {
     outDir: "../custom_components/watering_project/www",

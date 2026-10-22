@@ -2,18 +2,9 @@
 # both are gitignored.
 default_config:
 
-lovelace:
-  mode: yaml
-  resources:
-    - url: /watering_project/watering-project-card.js?v=0.1.0
-      type: module
-  dashboards:
-    watering-project:
-      mode: yaml
-      title: Watering Project
-      icon: mdi:sprout
-      show_in_sidebar: true
-      filename: watering-dashboard.yaml
+# Deliberately no `lovelace:` block: the sidebar tab and the card module come from
+# the integration's own panel registration, so this config is what a fresh install
+# looks like. If the panel registration regresses, every e2e scenario fails.
 
 logger:
   default: warning

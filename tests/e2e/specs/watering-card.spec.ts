@@ -36,7 +36,8 @@ test("1. mounts on its own sidebar tab, not on the main page", async ({ page }) 
 
   await openDashboard(page);
 
-  // The dashboard is a real sidebar entry (title + mdi:sprout icon).
+  // The integration owns the sidebar entry (title + mdi:sprout icon); no Lovelace
+  // dashboard and no resource is configured anywhere.
   const sidebar = page.locator("ha-sidebar");
   await expect(sidebar.getByRole("link", { name: "Watering Project" })).toBeVisible();
 
@@ -100,7 +101,7 @@ test("4. hysteresis keeps 72 % dry and releases at 76 % live", async ({ page }) 
   await expect(section(page, "dry")).not.toContainText("Ficus");
 });
 
-test("5. collapse state survives a reload when the card has an id", async ({ page }) => {
+test("5. collapse state survives a reload", async ({ page }) => {
   await openDashboard(page);
 
   const header = section(page, "dry").locator(".section-header");

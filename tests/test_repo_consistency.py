@@ -1,9 +1,8 @@
 """Cross-file consistency checks.
 
-These catch the failures that no unit test sees: the version the user puts in the
-resource URL drifting from the manifest, the HACS floor drifting from the runtime
-gate, and a translation file that silently lost a key (Home Assistant then renders
-raw keys in the UI).
+These catch the failures that no unit test sees: the version string drifting from
+the manifest, the HACS floor drifting from the runtime gate, and a translation
+file that silently lost a key (Home Assistant then renders raw keys in the UI).
 """
 
 from __future__ import annotations
@@ -16,6 +15,7 @@ from custom_components.watering_project.const import (
     DOMAIN,
     MIN_HOMEASSISTANT_VERSION,
     SCHEMA_VERSION,
+    VERSION,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -33,7 +33,12 @@ def test_manifest_identity() -> None:
     assert manifest["domain"] == DOMAIN
     assert manifest["version"] == _frontend_version()
     assert manifest["config_flow"] is True
-    assert set(manifest["dependencies"]) == {"http", "websocket_api"}
+    assert set(manifest["dependencies"]) == {
+        "frontend",
+        "http",
+        "panel_custom",
+        "websocket_api",
+    }
     assert manifest["requirements"] == []
 
 
@@ -42,15 +47,9 @@ def _frontend_version() -> str:
     return _manifest()["version"]
 
 
-def test_e2e_resource_url_matches_manifest_version() -> None:
-    content = E2E_CONFIG.read_text(encoding="utf-8")
-    match = re.search(r"watering-project-card\.js\?v=([0-9][^\"\s]*)", content)
-
-    assert match is not None, "e2e dashboard has no versioned card resource"
-    assert match.group(1) == _manifest()["version"], (
-        "tests/e2e/config/configuration.yaml pins a stale ?v=; the browser would "
-        "load a cached card instead of the committed bundle"
-    )
+def test_version_const_matches_the_manifest() -> None:
+    """The panel's cache-busting `?v=` comes from the code, not from a doc snippet."""
+    assert VERSION == _manifest()["version"]
 
 
 def test_hacs_floor_matches_runtime_gate() -> None:
@@ -98,9 +97,10 @@ def test_committed_bundle_exists_and_is_a_module() -> None:
     text = bundle.read_text(encoding="utf-8")
 
     assert bundle.stat().st_size > 10_000, "bundle looks empty"
+    # The panel is the entry point Home Assistant mounts; the card must be defined
+    # in the same module because the panel renders it.
+    assert "watering-project-panel" in text
     assert "watering-project-card" in text
-    # A `customElements.define` inside the bundle is what makes the resource usable
-    # with a plain `type: module` resource entry.
     assert "customElements.define" in text
 
 
@@ -125,28 +125,22 @@ def test_package_script_ships_the_runtime_files() -> None:
     assert not any("__pycache__" in name or name.endswith(".pyc") for name in names)
 
 
-def test_e2e_ships_a_dedicated_sidebar_dashboard() -> None:
-    """The documented surface is its own tab, not a card on the overview."""
+def test_e2e_ships_no_lovelace_configuration() -> None:
+    """The surface is the integration's own panel: nothing to register, nothing to edit.
+
+    A Lovelace resource or dashboard in the e2e config would hide a regression in
+    the panel registration, so the harness must run on a stock frontend.
+    """
     config = E2E_CONFIG.read_text(encoding="utf-8")
-    dashboard = ROOT / "tests" / "e2e" / "config" / "watering-dashboard.yaml"
-    overview = ROOT / "tests" / "e2e" / "config" / "ui-lovelace.yaml"
+    sections = set(re.findall(r"^([a-z_]+):", config, re.MULTILINE))
 
-    assert dashboard.exists()
-    assert "filename: watering-dashboard.yaml" in config
-    assert "title: Watering Project" in config
-    assert "icon: mdi:sprout" in config
-    assert "show_in_sidebar: true" in config
-    assert "mode: yaml" in config
-
-    dashboard_content = dashboard.read_text(encoding="utf-8")
-    assert "type: panel" in dashboard_content
-    assert "type: custom:watering-project-card" in dashboard_content
-
-    # The overview must not embed the card.
-    assert "custom:watering-project-card" not in overview.read_text(encoding="utf-8")
+    assert "lovelace" not in sections
+    assert "resources" not in sections
+    assert "watering-dashboard.yaml" not in config
+    assert not (ROOT / "tests" / "e2e" / "config" / "watering-dashboard.yaml").exists()
 
 
-def test_e2e_notify_url_points_at_the_dashboard() -> None:
+def test_e2e_notify_url_points_at_the_panel() -> None:
     harness = (ROOT / "tests" / "e2e" / "harness" / "state.ts").read_text(encoding="utf-8")
 
     assert '"/watering-project"' in harness
